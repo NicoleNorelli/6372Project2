@@ -1,0 +1,154 @@
+---
+title: "Untitled"
+output:
+  word_document: default
+  html_document: default
+---
+
+```{r Introduction}
+#Title: "MSDS 6372 Group Project 2: Bank Project - Predicting if a customer will subscribe to a term deposit."
+#Group Members: Nicole Norelli,Nneanna Okpara,Sowmya Mani
+#Date: March 25 2021
+
+#Introduction: This Project is about the Bank Market Analysis to predict if a customer will subscribe to a term deposit
+
+#The data set used for this analysis consists of 2 Data sets:
+
+#Bank Full.csv and Bank.csv
+
+#Bank client data:
+#1 - age (numeric)
+#2 - job : type of job (categorical:"admin.","unknown","unemployed","management","housemaid","entrepreneur","student",
+#                                     "blue-collar","self-employed","retired","technician","services") 
+#3 - marital : marital status (categorical: "married","divorced","single"; note: "divorced" means divorced or widowed)
+#4 - education (categorical: "unknown","secondary","primary","tertiary")
+#5 - default: has credit in default? (binary: "yes","no")
+#6 - balance: average yearly balance, in euros (numeric) 
+#7 - housing: has housing loan? (binary: "yes","no")
+#8 - loan: has personal loan? (binary: "yes","no")
+# related with the last contact of the current campaign:
+#9 - contact: contact communication type (categorical: "unknown","telephone","cellular") 
+#10 - day: last contact day of the month (numeric)
+#11 - month: last contact month of year (categorical: "jan", "feb", "mar", ..., "nov", "dec")
+#12 - duration: last contact duration, in seconds (numeric)
+# other attributes:
+#13 - campaign: number of contacts performed during this campaign and for this client (numeric, includes last contact)
+#14 - pdays: number of days that passed by after the client was last contacted from a previous campaign (numeric, -1 means client was not previously contacted)
+#15 - previous: number of contacts performed before this campaign and for this client (numeric)
+#16 - poutcome: outcome of the previous marketing campaign (categorical: "unknown","other","failure","success")
+
+#Output variable (desired target):
+#17 - y - has the client subscribed a term deposit? (binary: "yes","no")
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r Libraries}
+#Libraries loaded for the ANalysis
+library(XML) 
+library(dplyr)
+library(RCurl)
+library(httr)
+library(jsonlite)
+library(tidyverse)
+library(naniar)
+library(GGally)
+library(ggplot2)
+library(class)
+library(caret)
+library(knnp)
+library(e1071)
+library(ggplot2)
+library(maps)
+library(dplyr)
+library(mapproj)
+library(ggplot2)
+library(dplyr)
+library(ggcorrplot)
+
+#Import the Bank Full Data
+Bank_Full<-read.csv('C:/Sowmya/SMU/03_Applied Stats/Group Project 2/bank-full.csv' ,sep=";")
+
+#Quick Peek at the SUmmary data of the available dataset
+summary(Bank_Full)
+str(Bank_Full)
+
+#Checking for Missing Data
+sapply(Bank_Full,function(x) sum(is.na(x)))
+gg_miss_var(Bank_Full)+xlab("Missing Variables")
+
+#The Bank dataset has 45,211  observations with 17 variables providing more information on the Bank Clients.There is no missing data in the data set.
+
+#Test Data set
+Bank_Test<-read.csv('C:/Sowmya/SMU/03_Applied Stats/Group Project 2/bank.csv' ,sep=";")
+
+#Quick Peek at the SUmmary data of the available dataset
+summary(Bank_Test)
+str(Bank_Test)
+
+#Checking for Missing Data
+sapply(Bank_Test,function(x) sum(is.na(x)))
+gg_miss_var(Bank_Test)+xlab("Missing Variables")
+
+#The Test data set has 4,521 observations with 17 variables with no missing variables
+
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r Analysis}
+#sapply(Bank_Full, function(x) sum(x %in% common_na_strings)) # missing values using other than NA
+#sapply(Bank_Full, function(x) sum(x %in% common_na_numbers)) # missing values using other than NA
+#sapply(Bank_Full, function(x) sum(is.na(x)))
+#sapply(Bank_Full, function(x) sum(x %in% 'unknown'))
+
+#Analysing the data with plots
+Bank_Full%>%ggplot(aes(x=balance))+geom_histogram()+ scale_x_log10()
+
+#log of balance shows the data is normally distributed
+
+#Analysing the age and balance
+Bank_Full%>%ggplot(aes(x=age,y=balance))+geom_point()+geom_smooth()
+
+Bank_Full%>%ggplot(aes(x=balance,fill=job))+geom_histogram()+ scale_x_log10()
+
+Bank_Full%>%ggplot(aes(x=marital,y=balance,fill=marital))+geom_col()
+
+Bank_Full%>%ggplot(aes(x=job,y=balance,fill=job))+geom_col()
+
+Bank_Full%>%ggplot(aes(x=housing,y=balance,fill=loan))+geom_col()
+
+Bank_Full%>%ggplot(aes(x=loan,y=balance,fill=loan))+geom_col()
+
+Bank_Full%>%ggplot(aes(x=loan,y=balance,fill=loan))+geom_col()
+
+Bank_Full%>%ggplot(aes(x=duration,y=balance))+geom_point()+ scale_x_log10()+geom_smooth()
+
+Bank_gg<-Bank_Full%>%select(balance, duration,age )
+
+ggpairs(Bank_gg)
+
+cor.xy <- cor(Bank_Full %>% dplyr::select(balance, duration,age ), use = "complete.obs")
+LE.cor <- data.frame(var = rownames(cor.xy)[-1], correlation = cor.xy[-1, 1])
+LE.cor %>% ggplot(aes(x = var, y = correlation)) + geom_col() + coord_flip()
+
+corr <- Bank_Full %>% dplyr::select(balance, duration,age) 
+corr <- round(cor(corr), 2)
+ggcorrplot(corr,  type = "lower",
+           lab = TRUE, lab_size = 3, method = "circle",
+           colors = c("tomato2", "white", "springgreen3"),
+           title = "Correlations of all relevant variables",
+           ggtheme = theme_bw())
+
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+```{r Detail}
+
+```
