@@ -1,0 +1,760 @@
+---
+title: "Project 2 EDA 6372"
+author: "Nicole Norelli"
+date: "3/26/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+# Bank Data Set
+############## Description ###################
+# The data is related with direct marketing campaigns of a Portuguese banking institution. 
+# The marketing campaigns were based on phone calls. 
+# Often, more than one contact to the same client was required, in order to access if the product (bank term deposit) would be (or not) subscribed.
+# From May 2008 to November 2010
+# Goal: predict if client will subscribe a term deposit
+
+# Load CSV file:
+# bank.full.csv file
+bank.full <- read.csv("~/Downloads/bank/bank-full.csv", sep=";", stringsAsFactors=TRUE)
+# 45211 obs of 17 variables
+# Description of variables:
+##### Bank Client Data #######
+# 1 - age (numeric)
+# 2 - job : type of job (categorical: "admin.","unknown","unemployed","management","housemaid","entrepreneur","student","blue-collar","self-employed","retired","technician","services") 
+# 3 - marital : marital status (categorical: "married","divorced","single"; note: "divorced" means divorced or widowed)
+# 4 - education (categorical: "unknown","secondary","primary","tertiary")
+# 5 - default: has credit in default? (binary: "yes","no")
+# 6 - balance: average yearly balance, in euros (numeric) 
+# 7 - housing: has housing loan? (binary: "yes","no")
+# 8 - loan: has personal loan? (binary: "yes","no")
+######### related with the last contact of the current campaign:######
+# 9 - contact: contact communication type (categorical: "unknown","telephone","cellular") 
+# 10 - day: last contact day of the month (numeric)
+# 11 - month: last contact month of year (categorical: "jan", "feb", "mar", ..., "nov", "dec")
+# 12 - duration: last contact duration, in seconds (numeric)
+######## other attributes:#######
+# 13 - campaign: number of contacts performed during this campaign and for this client (numeric, includes last contact)
+# 14 - pdays: number of days that passed by after the client was last contacted from a previous campaign (numeric, -1 means client was not previously contacted)
+# 15 - previous: number of contacts performed before this campaign and for this client (numeric)
+# 16 - poutcome: outcome of the previous marketing campaign (categorical: "unknown","other","failure","success")
+#########Output variable (desired target):#######
+# 17 - y - has the client subscribed a term deposit? (binary: "yes","no")
+
+# Response:
+summary(bank.full$y)
+# 39922:5289 so 7.5:1 response balance
+```
+
+```{r}
+# Examine Missing Data
+library(tidyverse)
+library(naniar)
+library(visdat)
+sapply(bank.full, function(x) sum(x %in% common_na_strings)) # missing values using other than NA
+sapply(bank.full, function(x) sum(is.na(x)))
+sapply(bank.full, function(x) sum(x %in% 'unknown'))
+# job: 288, education: 1857, contact: 13020, poutcome: 36959
+
+# change 'unknown' to NA for ease of analysis
+bank.full.na = bank.full %>%
+  dplyr::na_if('unknown')
+sapply(bank.full.na, function(x) sum(is.na(x)))
+```
+
+```{r}
+# Missing values continued
+vis_dat(bank.full.na)
+gg_miss_var(bank.full.na)
+# This is interesting: 
+# Contact (contact communication type) is missing in a block from May 5 to partway through July 4, so it's not random
+# Similar issue with poutcome (outcome of previous marketing campaign). Values start to fill in around late October. Of course there's a lot more missing in this one.
+
+# Another thing to note: Because this data spans 2+ years (it seems to be in calendar order), I wonder if we should put a year variable in to keep track...
+
+summary(bank.full.na)
+# Note: pdays: -1 means not previously contacted.  We might need to do something with that
+```
+
+```{r}
+# Because these seem to be sequentially ordered, make a ID number in order
+bank.full = bank.full %>%
+  mutate(id = row_number())
+
+# Now add in the year variable
+bank.full = bank.full %>%
+  mutate(year = case_when(id>=1 & id<=27729 ~ '2008',
+                          id>=27730 & id<=42591 ~ '2009',
+                          id>=42592 ~ '2010'))
+bank.full$year = factor(bank.full$year)
+
+# Let's reorder month so it makes sense on graphs
+bank.full$month = factor(bank.full$month, levels=c("jan","feb","mar","apr","may","jun","jul","aug","sep","oct","nov","dec"))
+```
+
+```{r}
+library(GGally)
+# A look at categorical
+ggpairs(bank.full,columns=c(2:5,7:9,11,16:17),aes(colour=y)) # that's a little busy, let's break it down
+```
+
+```{r}
+library(viridis)
+# Job vs response
+prop.table(table(bank.full$y,bank.full$job),2)
+plot(bank.full$y~bank.full$job,col=c("red","blue"))
+j = bank.full %>% 
+  ggplot(aes(x=job, fill=y)) + 
+  geom_bar(position="fill") + 
+  scale_fill_viridis_d() +
+  ylab("Proportion") +
+  ggtitle("Proportion Subscribed to Term Deposit by Job")
+j + theme(axis.text.x = element_text(angle=90, hjust=1))
+# Looks like retired and student are higher proportions of Yes
+```
+
+```{r}
+# Marital vs response
+prop.table(table(bank.full$y,bank.full$marital),2)
+plot(bank.full$y~bank.full$marital,col=c("red","blue"))
+m = bank.full %>% 
+  ggplot(aes(x=marital, fill=y)) + 
+  geom_bar(position="fill") + 
+  scale_fill_viridis_d() +
+  ylab("Proportion") +
+  ggtitle("Proportion Subscribed to Term Deposit by Marital Status")
+m + theme(axis.text.x = element_text(angle=90, hjust=1))
+# Slightly higher for singles
+```
+
+```{r}
+# Education vs response
+prop.table(table(bank.full$y,bank.full$education),2)
+plot(bank.full$y~bank.full$education,col=c("red","blue"))
+bank.full %>% 
+  ggplot(aes(x=education, fill=y)) + 
+  geom_bar(position="fill") + 
+  scale_fill_viridis_d() +
+  ylab("Proportion") +
+  ggtitle("Proportion Subscribed to Term Deposit by Education")
+# Looks like it increases slightly as education increases
+```
+
+```{r}
+# default vs response
+prop.table(table(bank.full$y,bank.full$default),2)
+plot(bank.full$y~bank.full$default,col=c("red","blue"))
+bank.full %>% 
+  ggplot(aes(x=default, fill=y)) + 
+  geom_bar(position="fill") + 
+  scale_fill_viridis_d() +
+  ylab("Proportion") +
+  ggtitle("Proportion Subscribed to Term Deposit by Default")
+# Higher for no, but there are very few defaults relatively, so it might not be that useful
+```
+
+```{r}
+# housing vs response
+prop.table(table(bank.full$y,bank.full$housing),2)
+plot(bank.full$y~bank.full$housing,col=c("red","blue"))
+bank.full %>% 
+  ggplot(aes(x=housing, fill=y)) + 
+  geom_bar(position="fill") + 
+  scale_fill_viridis_d() +
+  ylab("Proportion") +
+  ggtitle("Proportion Subscribed to Term Deposit by Housing")
+# Higher for no, this looks like a good variable 
+```
+
+```{r}
+# loan vs response
+prop.table(table(bank.full$y,bank.full$loan),2)
+plot(bank.full$y~bank.full$loan,col=c("red","blue"))
+bank.full %>% 
+  ggplot(aes(x=loan, fill=y)) + 
+  geom_bar(position="fill") + 
+  scale_fill_viridis_d() +
+  ylab("Proportion") +
+  ggtitle("Proportion Subscribed to Term Deposit by Loan")
+# Higher for no, although most people are in the no category for loan anyway
+```
+
+```{r}
+# contact vs response
+prop.table(table(bank.full$y,bank.full$contact),2)
+plot(bank.full$y~bank.full$contact,col=c("red","blue"))
+bank.full %>% 
+  ggplot(aes(x=contact, fill=y)) + 
+  geom_bar(position="fill") + 
+  scale_fill_viridis_d() +
+  ylab("Proportion") +
+  ggtitle("Proportion Subscribed to Term Deposit by Contact")
+# This doesn't seem like it's going to be a good variable anyway, so maybe all the NAs won't be an issue
+```
+
+```{r}
+# month vs response
+prop.table(table(bank.full$y,bank.full$month),2)
+plot(bank.full$y~bank.full$month,col=c("red","blue"))
+bank.full %>% 
+  ggplot(aes(x=month, fill=y)) + 
+  geom_bar(position="fill") + 
+  scale_fill_viridis_d() +
+  ylab("Proportion") +
+  ggtitle("Proportion Subscribed to Term Deposit by Month")
+# This is interesting.  Higher proportions in Dec, Mar, Oct, Sept; however, those seem to be the months with less data...
+summary(bank.full$month)
+# Dec only has 214, Mar has 477, Oct has 738, Sept has 579.  All the other months have 1403-13766
+# also see breakdown by year
+```
+
+```{r}
+# poutcome vs response
+prop.table(table(bank.full$y,bank.full$poutcome),2)
+plot(bank.full$y~bank.full$poutcome,col=c("red","blue"))
+bank.full %>% 
+  ggplot(aes(x=poutcome, fill=y)) + 
+  geom_bar(position="fill") + 
+  scale_fill_viridis_d() +
+  ylab("Proportion") +
+  ggtitle("Proportion Subscribed to Term Deposit by Poutcome")
+# Well, even though we have a lot of NAs, success is a really strong predictor of our outcome
+# We probably need to find a way to incorporate that.
+```
+
+```{r}
+# year vs response
+prop.table(table(bank.full$y,bank.full$year),2)
+plot(bank.full$y~bank.full$year,col=c("red","blue"))
+bank.full %>% 
+  ggplot(aes(x=year, fill=y)) + 
+  geom_bar(position="fill") + 
+  scale_fill_viridis_d() +
+  ylab("Proportion") +
+  ggtitle("Proportion Subscribed to Term Deposit by Year")
+# Well this seems important.
+
+# Break down months by year
+bank.full %>% 
+  filter(year == 2008) %>%
+  ggplot(aes(x=month, fill=y)) + 
+  geom_bar(position="fill") + 
+  scale_fill_viridis_d() +
+  ylab("Proportion") +
+  ggtitle("Proportion Subscribed to Term Deposit by Month in 2008")
+bank.full %>% 
+  filter(year == 2009) %>%
+  ggplot(aes(x=month, fill=y)) + 
+  geom_bar(position="fill") + 
+  scale_fill_viridis_d() +
+  ylab("Proportion") +
+  ggtitle("Proportion Subscribed to Term Deposit by Month in 2009")
+bank.full %>% 
+  filter(year == 2010) %>%
+  ggplot(aes(x=month, fill=y)) + 
+  geom_bar(position="fill") + 
+  scale_fill_viridis_d() +
+  ylab("Proportion") +
+  ggtitle("Proportion Subscribed to Term Deposit by Month in 2010")
+```
+
+```{r}
+# continuous variables
+# age vs response
+t(aggregate(age~y,data=bank.full,summary))
+plot(bank.full$age~bank.full$y,col=c("red","blue"))
+bank.full %>%
+  ggplot(aes(x=y, y=age, color=y)) +
+  geom_boxplot() +
+  scale_fill_viridis_d() +
+  ggtitle("Term Deposit vs Age") +
+  xlab("Term Deposit")
+# looks pretty similar
+```
+
+```{r}
+# continuous variables
+# balance vs response
+t(aggregate(balance~y,data=bank.full,summary))
+plot(bank.full$balance~bank.full$y,col=c("red","blue"))
+bank.full %>%
+  ggplot(aes(x=y, y=balance, color=y)) +
+  geom_boxplot() +
+  scale_fill_viridis_d() +
+  ggtitle("Term Deposit vs Balance") +
+  xlab("Term Deposit")
+# looks like it could benefit from a transformation
+# but there's 0s and negatives...
+```
+
+```{r}
+# continuous variables
+# day vs response (not sure this is the best way to look at this)
+t(aggregate(day~y,data=bank.full,summary))
+plot(bank.full$day~bank.full$y,col=c("red","blue"))
+bank.full %>%
+  ggplot(aes(x=y, y=day, color=y)) +
+  geom_boxplot() +
+  scale_fill_viridis_d() +
+  ggtitle("Term Deposit vs Day") +
+  xlab("Term Deposit")
+# probably better to do this:
+bank.full %>% 
+  ggplot(aes(x=day, fill=y)) + 
+  geom_bar(position="fill") + 
+  scale_fill_viridis_d() +
+  ylab("Proportion") +
+  ggtitle("Proportion Subscribed to Term Deposit by Day")
+# maybe more likely on days 1, 10, 22, 30? Maybe something to do with paydays
+```
+
+```{r}
+# continuous variables
+# duration vs response
+t(aggregate(duration~y,data=bank.full,summary))
+plot(bank.full$duration~bank.full$y,col=c("red","blue"))
+bank.full %>%
+  ggplot(aes(x=y, y=duration, color=y)) +
+  geom_boxplot() +
+  scale_fill_viridis_d() +
+  ggtitle("Term Deposit vs Duration") +
+  xlab("Term Deposit")
+# Definitely a difference there - yes tends to have a longer duration
+# might want to look at that outlier in the high 4000s of duration
+```
+
+```{r}
+# continuous variables
+# campaign vs response
+t(aggregate(campaign~y,data=bank.full,summary))
+plot(bank.full$campaign~bank.full$y,col=c("red","blue"))
+bank.full %>%
+  ggplot(aes(x=y, y=campaign, color=y)) +
+  geom_boxplot() +
+  scale_fill_viridis_d() +
+  ggtitle("Term Deposit vs Campaign") +
+  xlab("Term Deposit")
+# try logging it (all numbers are positive and no 0s)
+bank.full %>%
+  ggplot(aes(x=y, y=log(campaign), color=y)) +
+  geom_boxplot() +
+  scale_fill_viridis_d() +
+  ggtitle("Term Deposit vs Log Campaign") +
+  xlab("Term Deposit")
+# Doesn't look that helpful
+# There might be a cut-off above which there are only No's (like >35 or 40)
+```
+
+```{r}
+# continuous variables
+# pdays vs response (NOTE the meaning of -1)
+t(aggregate(pdays~y,data=bank.full,summary))
+plot(bank.full$pdays~bank.full$y,col=c("red","blue"))
+bank.full %>%
+  ggplot(aes(x=y, y=pdays, color=y)) +
+  geom_boxplot() +
+  scale_fill_viridis_d() +
+  ggtitle("Term Deposit vs Pdays") +
+  xlab("Term Deposit")
+# let's see what this looks like when we take out the -1:
+bank.full %>%
+  filter(pdays != -1) %>%
+  ggplot(aes(x=y, y=pdays, color=y)) +
+  geom_boxplot() +
+  scale_fill_viridis_d() +
+  ggtitle("Term Deposit vs Pdays - Previously contacted") +
+  xlab("Term Deposit")
+# So for those previously contacted: less days are associated with more yes in response
+# let's look at those not previously contacted:
+bank.full %>%
+  filter(pdays == -1) %>%
+  ggplot(aes(x=y, fill=y)) +
+  geom_bar() +
+  scale_fill_viridis_d() +
+  ggtitle("Term Deposit vs Pdays - Not Previously Contacted") +
+  xlab("Term Deposit")
+# look at count for not previously contacted
+bank.full %>%
+  filter(pdays == -1) %>%
+  count(y)
+# no:33570, yes:3384 (1/9 are yes)
+# look at count for previously contacted
+bank.full %>%
+  filter(pdays != -1) %>%
+  count(y)
+# No:6352, yes:1905 (1/3 are yes)
+# that's a big difference
+```
+
+```{r}
+# continuous variables
+# previous vs response
+t(aggregate(previous~y,data=bank.full,summary))
+plot(bank.full$previous~bank.full$y,col=c("red","blue"))
+bank.full %>%
+  ggplot(aes(x=y, y=previous, color=y)) +
+  geom_boxplot() +
+  scale_fill_viridis_d() +
+  ggtitle("Term Deposit vs Previous") +
+  xlab("Term Deposit")
+# outlier over 250
+# let's look at it w/o
+bank.full %>%
+  filter(previous < 100) %>%
+  ggplot(aes(x=y, y=previous, color=y)) +
+  geom_boxplot() +
+  scale_fill_viridis_d() +
+  ggtitle("Term Deposit vs Previous") +
+  xlab("Term Deposit")
+# hard to visualize. in the table, the mean for yes is higher though.
+```
+
+```{r}
+# paired scatterplots coded by response: AGE
+# (looking for possible interactions)
+# Age vs Balance
+bank.full %>%
+  ggplot(aes(x=age, y=balance, color=y)) +
+  geom_point() +
+  scale_color_viridis_d() +
+  ggtitle("Age vs Balance by Response")
+
+# Age vs Day
+bank.full %>%
+  ggplot(aes(x=age, y=day, color=y)) +
+  geom_point(position="jitter") +
+  scale_color_viridis_d() +
+  ggtitle("Age vs Day by Response")
+
+# Age vs Duration
+bank.full %>%
+  ggplot(aes(x=age, y=duration, color=y)) +
+  geom_point(position="jitter") +
+  scale_color_viridis_d() +
+  ggtitle("Age vs Duration by Response")
+
+# Age vs Campaign
+bank.full %>%
+  ggplot(aes(x=age, y=campaign, color=y)) +
+  geom_point(position="jitter") +
+  scale_color_viridis_d() +
+  ggtitle("Age vs Campaign by Response")
+# There's a cut-off around 60 where people are no longer contacted by the campaign a ton of times.
+
+# Age vs Pdays
+bank.full %>%
+  ggplot(aes(x=age, y=pdays, color=y)) +
+  geom_point(position="jitter") +
+  scale_color_viridis_d() +
+  ggtitle("Age vs Pdays by Response")
+
+# Age vs Previous
+bank.full %>%
+  ggplot(aes(x=age, y=previous, color=y)) +
+  geom_point(position="jitter") +
+  scale_color_viridis_d() +
+  ggtitle("Age vs Previous by Response")
+# note the outlier: previous = 275.  Next closest is 58.
+```
+
+```{r}
+# paired scatterplots coded by response: BALANCE
+# (looking for possible interactions)
+# Age vs Balance
+bank.full %>%
+  ggplot(aes(x=age, y=balance, color=y)) +
+  geom_point() +
+  scale_color_viridis_d() +
+  ggtitle("Age vs Balance by Response")
+
+# Balance vs Day
+bank.full %>%
+  ggplot(aes(x=balance, y=day, color=y)) +
+  geom_point(position="jitter") +
+  scale_color_viridis_d() +
+  ggtitle("Age vs Balance by Response")
+
+# Balance vs Duration
+bank.full %>%
+  ggplot(aes(x=balance, y=duration, color=y)) +
+  geom_point(position="jitter") +
+  scale_color_viridis_d() +
+  ggtitle("Balance vs Duration by Response")
+
+# Balance vs Campaign
+bank.full %>%
+  ggplot(aes(x=balance, y=campaign, color=y)) +
+  geom_point(position="jitter") +
+  scale_color_viridis_d() +
+  ggtitle("Balance vs Campaign by Response")
+# As noted previously, there aren't any Yes's above a certain # in campaign
+
+# Balance vs Pdays
+bank.full %>%
+  ggplot(aes(x=balance, y=pdays, color=y)) +
+  geom_point(position="jitter") +
+  scale_color_viridis_d() +
+  ggtitle("Balance vs Pdays by Response")
+
+# Balance vs Previous
+bank.full %>%
+  ggplot(aes(x=balance, y=previous, color=y)) +
+  geom_point(position="jitter") +
+  scale_color_viridis_d() +
+  ggtitle("Balance vs Previous by Response")
+# note the outlier: previous = 275.  Next closest is 58.
+```
+
+```{r}
+# paired scatterplots coded by response: DURATION
+# (looking for possible interactions)
+# Duration vs Balance
+bank.full %>%
+  ggplot(aes(x=duration, y=balance, color=y)) +
+  geom_point() +
+  scale_color_viridis_d() +
+  ggtitle("Age vs Balance by Response")
+
+# Duration vs Day
+bank.full %>%
+  ggplot(aes(x=duration, y=day, color=y)) +
+  geom_point(position="jitter") +
+  scale_color_viridis_d() +
+  ggtitle("Duration vs Day by Response")
+
+# Age vs Duration
+bank.full %>%
+  ggplot(aes(x=age, y=duration, color=y)) +
+  geom_point(position="jitter") +
+  scale_color_viridis_d() +
+  ggtitle("Age vs Duration by Response")
+
+# Duration vs Campaign
+bank.full %>%
+  ggplot(aes(x=duration, y=campaign, color=y)) +
+  geom_point(position="jitter") +
+  scale_color_viridis_d() +
+  ggtitle("Duration vs Campaign by Response")
+
+# Duration vs Pdays
+bank.full %>%
+  ggplot(aes(x=duration, y=pdays, color=y)) +
+  geom_point(position="jitter") +
+  scale_color_viridis_d() +
+  ggtitle("Duration vs Pdays by Response")
+
+# Duration vs Previous
+bank.full %>%
+  ggplot(aes(x=duration, y=previous, color=y)) +
+  geom_point(position="jitter") +
+  scale_color_viridis_d() +
+  ggtitle("Duration vs Previous by Response")
+# note the outlier: previous = 275.  Next closest is 58.
+```
+
+```{r}
+# paired scatterplots coded by response: AGE
+# (looking for possible interactions)
+# Campaign vs Balance
+bank.full %>%
+  ggplot(aes(x=campaign, y=balance, color=y)) +
+  geom_point(position="jitter") +
+  scale_color_viridis_d() +
+  ggtitle("Campaign vs Balance by Response")
+
+# Campaign vs Day
+bank.full %>%
+  ggplot(aes(x=campaign, y=day, color=y)) +
+  geom_point(position="jitter") +
+  scale_color_viridis_d() +
+  ggtitle("Campaign vs Day by Response")
+
+# Campaign vs Duration
+bank.full %>%
+  ggplot(aes(x=campaign, y=duration, color=y)) +
+  geom_point(position="jitter") +
+  scale_color_viridis_d() +
+  ggtitle("Campaign vs Duration by Response")
+
+# Age vs Campaign
+bank.full %>%
+  ggplot(aes(x=age, y=campaign, color=y)) +
+  geom_point(position="jitter") +
+  scale_color_viridis_d() +
+  ggtitle("Age vs Campaign by Response")
+# There's a cut-off around 60 where people are no longer contacted by the campaign a ton of times.
+
+# Campaign vs Pdays
+bank.full %>%
+  ggplot(aes(x=campaign, y=pdays, color=y)) +
+  geom_point(position="jitter") +
+  scale_color_viridis_d() +
+  ggtitle("Campaign vs Pdays by Response")
+
+# Campaign vs Previous
+bank.full %>%
+  ggplot(aes(x=campaign, y=previous, color=y)) +
+  geom_point(position="jitter") +
+  scale_color_viridis_d() +
+  ggtitle("Campaign vs Previous by Response")
+# So the people who were contacted a ton of times by this campaign were all people who had not been previously contacted before
+```
+
+```{r}
+# paired scatterplots coded by response: PDAYS
+# (looking for possible interactions)
+# Pdays vs Balance
+bank.full %>%
+  ggplot(aes(x=pdays, y=balance, color=y)) +
+  geom_point(position="jitter") +
+  scale_color_viridis_d() +
+  ggtitle("Pdays vs Balance by Response")
+
+# Pdays vs Day
+bank.full %>%
+  ggplot(aes(x=pdays, y=day, color=y)) +
+  geom_point(position="jitter") +
+  scale_color_viridis_d() +
+  ggtitle("Pdays vs Day by Response")
+
+# Pdays vs Duration
+bank.full %>%
+  ggplot(aes(x=pdays, y=duration, color=y)) +
+  geom_point(position="jitter") +
+  scale_color_viridis_d() +
+  ggtitle("Pdays vs Duration by Response")
+
+# Pdays vs Campaign
+bank.full %>%
+  ggplot(aes(x=pdays, y=campaign, color=y)) +
+  geom_point(position="jitter") +
+  scale_color_viridis_d() +
+  ggtitle("Pdays vs Campaign by Response")
+
+# Age vs Pdays
+bank.full %>%
+  ggplot(aes(x=age, y=pdays, color=y)) +
+  geom_point(position="jitter") +
+  scale_color_viridis_d() +
+  ggtitle("Age vs Pdays by Response")
+
+# Pdays vs Previous
+bank.full %>%
+  ggplot(aes(x=pdays, y=previous, color=y)) +
+  geom_point(position="jitter") +
+  scale_color_viridis_d() +
+  ggtitle("Pdays vs Previous by Response")
+# note the outlier: previous = 275.  Next closest is 58.
+```
+
+```{r}
+# paired scatterplots coded by response: PREVIOUS
+# (looking for possible interactions)
+# Previous vs Balance
+bank.full %>%
+  ggplot(aes(x=previous, y=balance, color=y)) +
+  geom_point(position="jitter") +
+  scale_color_viridis_d() +
+  ggtitle("Previous vs Balance by Response")
+
+# Previous vs Day
+bank.full %>%
+  ggplot(aes(x=previous, y=day, color=y)) +
+  geom_point(position="jitter") +
+  scale_color_viridis_d() +
+  ggtitle("Previous vs Day by Response")
+
+# Previous vs Duration
+bank.full %>%
+  ggplot(aes(x=previous, y=duration, color=y)) +
+  geom_point(position="jitter") +
+  scale_color_viridis_d() +
+  ggtitle("Previous vs Duration by Response")
+
+# Previous vs Campaign
+bank.full %>%
+  ggplot(aes(x=previous, y=campaign, color=y)) +
+  geom_point(position="jitter") +
+  scale_color_viridis_d() +
+  ggtitle("Previous vs Campaign by Response")
+
+# Age vs Previous
+bank.full %>%
+  ggplot(aes(x=age, y=previous, color=y)) +
+  geom_point(position="jitter") +
+  scale_color_viridis_d() +
+  ggtitle("Age vs Previous by Response")
+
+# Pdays vs Previous
+bank.full %>%
+  ggplot(aes(x=pdays, y=previous, color=y)) +
+  geom_point(position="jitter") +
+  scale_color_viridis_d() +
+  ggtitle("Pdays vs Previous by Response")
+# note the outlier: previous = 275.  Next closest is 58.
+```
+
+
+Summary (tl;dr)
+
+45211 obs of 17 variables
+Response: 39922:5289 No to Yes
+-This is quite unbalanced.  We'll likely have to downsample/upsample and/or adjust the cut-off value to get the appropriate sensitivity-specificity balance.
+
+Missing Values:
+job: 288, education: 1857, contact: 13020, poutcome: 36959
+-contact: (contact communication type) is missing in a block from May 5 to partway through July 4, so it's not random.
+-poutcome: Similar issue (outcome of previous marketing campaign). Values start to fill in around late October. Of course there's a lot more missing in this one.
+-Another thing to note: Because this data spans 2+ years (it seems to be in calendar order), I wonder if we should put a year variable in to keep track.
+-Note: pdays: -1 means not previously contacted.  We will need to do something with that.
+
+Trends:
+Associated with Yes outcome:
+-Job levels: "student", "retired"
+-Marital status: "single" (slightly)
+-Education: increases with education
+-Default: "no" (but that's most of the values so it might not be useful)
+-Housing: "no"
+-Loan: "no" (although most people are in that category)
+-Contact: not much difference But if we look at NA there might be something going on, as proportion of yes response is much lower.  We know all the NAs were at the beginning of the time window. 
+-Month: Higher proportions in Dec, Mar, Oct, Sept; however, those seem to be the months with less data. Dec only has 214, Mar has 477, Oct has 738, Sept has 579.  All the other months have 1403-13766. Might be interesting to break it down by year.
+-Poutcome: Even though we have a lot of NAs, success is a really strong predictor of our outcome. We need to incorporate this.
+-Age: not seeing much effect
+-Balance: Difficult to tell as it's so skewed. Might need to play around with this.
+-Day: More likely on days 1, 10, 22, 30? Maybe something to do with paydays.
+-Duration: Definitely a difference there - yes tends to have a longer duration.
+-Campaign: pretty similar. There might be a cut-off above which there are only No's (like >35 or 40)
+-Pdays: For those previously contacted: less days are associated with more yes in response. For those not previously contacted, there is a much LOWER proportion of yes's
+-Year: this appear to be very important.  The more recent, the higher proportion of yes's
+
+Possible Outliers:
+Duration: might want to look at that outlier in the high 4000s of duration
+Previous: possible outlier at 275.  Next closest is 58.
+
+Addressing Problem Variables:
+1. pdays is both continuous and categorical.  The proportions for the categories are quite different. I see 2 options:
+-We could make a new variable with Yes/No outcome for previously contacted.  Then we could change the -1 value to 0 (or leave it -1?). The problem with it being continuous is that it implies the difference between -1 and 1 is the same as the difference between 1 and 3, which in this case doesn't really make sense. This way we could keep all the continuous variable information, but the new categorical variable would match exactly with the 0/-1 assignment and allow for an adjustment when the person wasn't contacted. I'll need to ask about this in office hours.
+-We could break it up into categorical chunks. (This would lose data though.)
+
+2. poutcome is important, but the bulk of it is missing.  I think we could change the NA back to unknown and keep that as a category, explaining the variable clearly in our write-up.
+
+Possible Interactions:
+
+
+Future Areas to Explore:
+look at responses over time
+
+To do:
+train/test split: 80/20 or 75/25 or 70/30?
+
+
+
+
+
+
+
+
