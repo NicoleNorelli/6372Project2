@@ -103,6 +103,29 @@ ggpairs(bank.full,columns=c(2:5,7:9,11,16:17),aes(colour=y)) # that's a little b
 ```
 
 ```{r}
+# Summary stats
+# I'm not sure why aggregate isn't printing - it works in the console
+# Continuous variables
+aggregate(age~y,data=bank.full,summary)
+aggregate(balance~y,data=bank.full,summary)
+aggregate(day~y,data=bank.full,summary)
+aggregate(duration~y,data=bank.full,summary)
+aggregate(campaign~y,data=bank.full,summary)
+aggregate(pdays~y,data=bank.full,summary)
+# Categorical Variables
+ftable(addmargins(table(bank.full$y,bank.full$job)))
+ftable(addmargins(table(bank.full$y,bank.full$marital)))
+ftable(addmargins(table(bank.full$y,bank.full$education)))
+ftable(addmargins(table(bank.full$y,bank.full$default))) # only 52 Yes-Yes
+ftable(addmargins(table(bank.full$y,bank.full$housing)))
+ftable(addmargins(table(bank.full$y,bank.full$loan)))
+ftable(addmargins(table(bank.full$y,bank.full$contact)))
+ftable(addmargins(table(bank.full$y,bank.full$month)))
+ftable(addmargins(table(bank.full$y,bank.full$poutcome)))
+ftable(addmargins(table(bank.full$y,bank.full$year)))
+```
+
+```{r}
 library(viridis)
 # Job vs response
 prop.table(table(bank.full$y,bank.full$job),2)
@@ -698,6 +721,245 @@ bank.full %>%
 # note the outlier: previous = 275.  Next closest is 58.
 ```
 
+```{r}
+# Correlations between continuous variable
+# Exploring multicollinearity
+pairs(bank.full[,c(1,6,10,12,13,14,15)])
+my.cor<-cor(bank.full[,c(1,6,10,12,13,14,15)])
+my.cor
+pairs(bank.full[,c(1,6,10,12,13,14,15)],col=bank.full$y)
+
+# Heatmap
+library(gplots)
+library(ggplot2)
+heatmap.2(my.cor,col=redgreen(75), 
+          density.info="none", trace="none", dendrogram=c("row"), 
+          symm=F,symkey=T,symbreaks=T, scale="none")
+# previous and pdays correlation = 0.45. Will also be correlated with the dummy variable we build
+```
+
+```{r}
+# multicollinearity w/ categorical speculation
+
+# Hyp: older people would be more likely to have landline
+plot(bank.full$age~bank.full$contact,col=c("red","blue"))
+# Yes, but there's overlap
+
+# Hyp: balance and education 
+plot(bank.full$balance~bank.full$education,col=c("red","blue"))
+plot(log(bank.full$balance)~bank.full$education,col=c("red","blue"))
+# note I know there's zeros, just looking 
+# slight but not dramatic
+
+# age and marital
+plot(bank.full$age~bank.full$marital,col=c("red","blue"))
+# single people tend to be younger, as you'd expect
+
+# housing and loan
+plot(bank.full$housing~bank.full$loan,col=c("red","blue")) # similar ratios
+```
+
+```{r}
+# look at vifs
+model.main<-glm(y~.-id, data=bank.full,family = binomial(link="logit"))
+vif(model.main)
+#Using this tool, GVIF is the same as VIF for continuous predictors only
+#For categorical predictors, the value GVIG^(1/(2*df)) should be squared and interpreted
+#as a usual vif type metric.The following code can be used to interpret VIFs like we 
+#discussed in class.
+(vif(model.main)[,3])^2
+
+# VIFs don't look bad.
+```
+
+```{r}
+# Normality will be a concern for LDA/QDA:
+hist(bank.full$age) #fine
+hist(bank.full$balance) #skew
+range(bank.full$balance) # This is skewed but has negative numbers
+hist(bank.full$duration) #skew
+range(bank.full$duration) # There are 3 zeros...
+hist(bank.full$campaign)
+range(bank.full$campaign) # 1-3
+hist(log(bank.full$campaign)) # still doesn't look great
+hist(bank.full$pdays) #skewed, but there's negative -1's that we will likely change to 0
+hist(bank.full$previous)
+range(bank.full$previous) #0-275 (but next lowest is 58)
+bank.full %>%
+  filter(previous <60) %>%
+  ggplot(aes(x=previous)) +
+  geom_histogram()
+# still skewed
+```
+
+```{r}
+# Make indicator variable for pdays variable
+# Step 1: change pdays -1 values to 0
+#   Note: There are no pre-existing 0 values in pdays. -1 was arbitrary. By changing it to 0, we can have the beta for this coefficient not turn on when people not previously contacted
+# Step 2: make indicator variable that is 1 if pdays is 0, and 0 if pdays is any other value
+#   Note: This turns on the dummy variable if someone wasn't previously contacted.  If they were, it turns it off because the pdays variable is modeling it
+
+# Double checking my work:
+bank.full %>%
+  filter(pdays == -1) %>%
+  count()
+# there are 36954 -1 values in pdays
+
+# Change pdays -1 to 0:
+bank.full$pdays[bank.full$pdays==-1] = 0
+
+# check the count
+bank.full %>%
+  filter(pdays == 0) %>%
+  count() #looks right
+
+# Make dummy variable and change to factor
+bank.full = bank.full %>%
+  mutate(pcontact = case_when(
+    pdays == 0 ~ 1,
+    pdays != 0 ~ 0
+  ))
+bank.full$pcontact = factor(bank.full$pcontact)
+# Note: pcontact = 1 means "not previously contacted", pcontact = 0 means "previously contacted"
+```
+
+```{r}
+# look at the identified possible outliers
+# Duration
+summary(bank.full$duration)
+bank.full %>% 
+  filter(bank.full$duration == 4918)
+# 4918 is max (response is no), next value following it is 3881
+# 4918/60 = 81.9 minutes. 3881/60 = 64.68 minutes. Median = 3 min, Mean = 4.3 min, 3rd Q = 5.31 min
+# Can we justify throwing this out by saying 81.9 minutes is not a good use of time? That's 19 average phone calls...
+# Also this is Nov 2008. Depending on what we do, it may be a non-issue
+
+# Previous
+summary(bank.full$previous)
+# Might make more sense to look at it w/o the 0s:
+bank.full %>%
+  filter(previous >0) %>%
+  summarise(mean = mean(previous), 
+            median = median(previous), 
+            min = min(previous),
+            max = max(previous),
+            quantile = quantile(previous))
+# 275 (response is no), next value is 58 
+bank.full %>%
+  filter(bank.full$previous == 275)
+
+# I suppose we could say that we don't have enough data in this date range to be useful
+# So we can restrict the range down to <100 or something.
+
+# Removing the 2 outliers:
+# double checking my work
+nrow(bank.full) # 45211
+bank.full = subset(bank.full, duration != 4918)
+nrow(bank.full) #45210
+bank.full = subset(bank.full, previous != 275)
+nrow(bank.full) #45209
+```
+
+```{r}
+# PCA as part of the EDA
+# Continuous predictors
+
+# This includes: age, balance, day, duration, campaign, pdays, previous
+pc.result<-prcomp(bank.full[,c(1,6,10,12,13,14,15)],scale.=TRUE)
+pc.scores<-pc.result$x
+pc.scores<-data.frame(pc.scores)
+pc.scores$y<-bank.full$y
+
+#Use ggplot2 to plot the first few pc's
+ggplot(data = pc.scores, aes(x = PC1, y = PC2)) +
+  geom_point(aes(col=y), size=1)+
+  ggtitle("PCA of Bank.full")
+
+# Not great.  Some separation.  Still debating using day in there.
+
+# PCA w/o day:
+# This includes: age, balance, duration, campaign, pdays, previous
+pc.result<-prcomp(bank.full[,c(1,6,12,13,14,15)],scale.=TRUE)
+pc.scores<-pc.result$x
+pc.scores<-data.frame(pc.scores)
+pc.scores$y<-bank.full$y
+
+#Use ggplot2 to plot the first few pc's
+ggplot(data = pc.scores, aes(x = PC1, y = PC2)) +
+  geom_point(aes(col=y), size=1)+
+  ggtitle("PCA of Bank.full w/o Day")
+
+# We might want to do this again when we address normality for LDA/QDA.
+# Not necessary for PCA but slides indicate it may improve the results.
+```
+
+```{r}
+# Explore what the data looks like if we remove 2008
+
+prop.table(table(bank.full$y,bank.full$year),2)
+plot(bank.full$y~bank.full$year,col=c("red","blue"))
+
+bank.full.new = bank.full %>%
+  filter(year != 2008)
+
+summary(bank.full.new)
+# 17481 rows.  13593 no to 3888 yes. (3.5:1)  Much less unbalanced.
+
+```
+
+```{r}
+# Try some EDA on the 2009-2010 data set
+
+# PCA
+# This includes: age, balance, day, duration, campaign, pdays, previous
+pc.result<-prcomp(bank.full.new[,c(1,6,10,12,13,14,15)],scale.=TRUE)
+pc.scores<-pc.result$x
+pc.scores<-data.frame(pc.scores)
+pc.scores$y<-bank.full.new$y
+
+#Use ggplot2 to plot the first few pc's
+ggplot(data = pc.scores, aes(x = PC1, y = PC2)) +
+  geom_point(aes(col=y), size=1)+
+  ggtitle("PCA of Bank.full")
+# That still doesn't look great
+```
+
+```{r}
+# Multicollinearity with the 2009-2010 data set
+# look at vifs
+model.main<-glm(y~.-id, data=bank.full.new,family = binomial(link="logit"))
+vif(model.main)
+#Using this tool, GVIF is the same as VIF for continuous predictors only
+#For categorical predictors, the value GVIG^(1/(2*df)) should be squared and interpreted
+#as a usual vif type metric.The following code can be used to interpret VIFs like we 
+#discussed in class.
+(vif(model.main)[,3])^2
+# Aside from poutcome and pcontact, it looks ok
+
+bank.full.new %>% 
+  ggplot(aes(x=poutcome, fill=pcontact)) + 
+  geom_bar(position="fill") + 
+  scale_fill_viridis_d() +
+  ylab("Proportion") +
+  ggtitle("Poutcome vs Pcontact")
+
+# well, it looks like the pcontact dummy variable is unnecessary.
+# the "unknown" poutcome level captures all of the people not previously contacted.
+
+# try again without the pcontact variable
+# look at vifs
+model.main<-glm(y~.-id-pcontact, data=bank.full.new,family = binomial(link="logit"))
+vif(model.main)
+#Using this tool, GVIF is the same as VIF for continuous predictors only
+#For categorical predictors, the value GVIG^(1/(2*df)) should be squared and interpreted
+#as a usual vif type metric.The following code can be used to interpret VIFs like we 
+#discussed in class.
+(vif(model.main)[,3])^2
+
+# that looks fine.
+```
+
+
 
 Summary (tl;dr)
 
@@ -734,22 +996,27 @@ Associated with Yes outcome:
 Possible Outliers:
 Duration: might want to look at that outlier in the high 4000s of duration
 Previous: possible outlier at 275.  Next closest is 58.
+I removed both of these. I believe there is sufficient reason to argue for removal (explained in EDA)
 
-Addressing Problem Variables:
-1. pdays is both continuous and categorical.  The proportions for the categories are quite different. I see 2 options:
--We could make a new variable with Yes/No outcome for previously contacted.  Then we could change the -1 value to 0 (or leave it -1?). The problem with it being continuous is that it implies the difference between -1 and 1 is the same as the difference between 1 and 3, which in this case doesn't really make sense. This way we could keep all the continuous variable information, but the new categorical variable would match exactly with the 0/-1 assignment and allow for an adjustment when the person wasn't contacted. I'll need to ask about this in office hours.
--We could break it up into categorical chunks. (This would lose data though.)
+Addressing Problem Variables/issues:
+1. pdays is both continuous and categorical.  The proportions for the categories are quite different.
+I changed the -1 to 0 in the pdays variable. This means that the coefficient for pdays will be zero when a person wasn't previously contacted.  Then I made a dummy variable for the people not previously contacted (pcontact). Turns out it was unnecessary.  The "unknown" level of poutcome consists entirely of those not previously contacted, so this should be sufficient.  I believe pcontact will be unnecessary.
 
-2. poutcome is important, but the bulk of it is missing.  I think we could change the NA back to unknown and keep that as a category, explaining the variable clearly in our write-up.
+2. Our LDA/QDA is going to be problematic. Our better predictors are categorical, and most of our continuous variables are very skewed. LDA/QDA only takes continuous predictors, and it assumes normality. I know we can try adding a tiny amount to the 0 values and logging for variables that have zero.  Not sure how to try dealing with balance, as it has both 0s and negative numbers.  Need to look into this.
+
 
 Possible Interactions:
 
+Multicollinearity:
+Previous and pdays: cor = 0.4548
+But VIFs look ok.
 
 Future Areas to Explore:
-look at responses over time
+Cut out early data? If we argue for this we have a much less unbalanced data set.
+duration variable and a predictive model problem
 
 To do:
-train/test split: 80/20 or 75/25 or 70/30?
+train/test split: 80/20
 
 
 
