@@ -775,21 +775,30 @@ vif(model.main)
 ```{r}
 # Normality will be a concern for LDA/QDA:
 hist(bank.full$age) #fine
+
 hist(bank.full$balance) #skew
-range(bank.full$balance) # This is skewed but has negative numbers
+range(bank.full$balance) # This is skewed but has negative numbers (min=-8019)
+hist(log(bank.full$balance+8020)) # nope
+hist(sqrt(bank.full$balance+8020)) # nope
+
+
 hist(bank.full$duration) #skew
 range(bank.full$duration) # There are 3 zeros...
+hist(sqrt(bank.full$duration)) # this looks promising!
+
 hist(bank.full$campaign)
-range(bank.full$campaign) # 1-3
+range(bank.full$campaign) # 1-63
 hist(log(bank.full$campaign)) # still doesn't look great
-hist(bank.full$pdays) #skewed, but there's negative -1's that we will likely change to 0
+hist(sqrt(bank.full$campaign)) # nope
+
+hist(bank.full$pdays) #skewed, w/ lots of 0s
+hist(log(bank.full$pdays+1)) # nope
+hist(sqrt(bank.full$pdays)) # nope
+
 hist(bank.full$previous)
-range(bank.full$previous) #0-275 (but next lowest is 58)
-bank.full %>%
-  filter(previous <60) %>%
-  ggplot(aes(x=previous)) +
-  geom_histogram()
-# still skewed
+range(bank.full$previous) # 0- 58
+hist(sqrt(bank.full$previous)) # slightly improved but really skewed
+hist(log(bank.full$previous+1)) # not great
 ```
 
 ```{r}
@@ -1002,7 +1011,7 @@ Addressing Problem Variables/issues:
 1. pdays is both continuous and categorical.  The proportions for the categories are quite different.
 I changed the -1 to 0 in the pdays variable. This means that the coefficient for pdays will be zero when a person wasn't previously contacted.  Then I made a dummy variable for the people not previously contacted (pcontact). Turns out it was unnecessary.  The "unknown" level of poutcome consists entirely of those not previously contacted, so this should be sufficient.  I believe pcontact will be unnecessary.
 
-2. Our LDA/QDA is going to be problematic. Our better predictors are categorical, and most of our continuous variables are very skewed. LDA/QDA only takes continuous predictors, and it assumes normality. I know we can try adding a tiny amount to the 0 values and logging for variables that have zero.  Not sure how to try dealing with balance, as it has both 0s and negative numbers.  Need to look into this.
+2. Our LDA/QDA is going to be problematic. Our better predictors are categorical, and most of our continuous variables are very skewed. LDA/QDA only takes continuous predictors, and it assumes normality. I know we can try adding a tiny amount to the 0 values and logging for variables that have zero.  Not sure how to try dealing with balance, as it has both 0s and negative numbers.  Need to look into
 
 
 Possible Interactions:
