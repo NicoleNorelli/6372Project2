@@ -122,6 +122,7 @@ step(model.null,
      test="Chisq",
      data=train)
 # Final model: y ~ month + duration + poutcome + year + housing + contact + day + education + campaign + loan + job + age
+# AIC: 10330
 ```
 
 ```{r}
@@ -134,6 +135,7 @@ exp(cbind("Odds ratio" = coef(model.forward.1), confint.default(model.forward.1,
 vif(model.forward.1)
 plot(model.forward.1)
 # AIC: 10326
+# if take out age for parsimony (not sig in final model) AIC: 10327
 ```
 
 ```{r}
@@ -213,6 +215,7 @@ cvfit$lambda.min
 finalmodel<-glmnet(dat.train.x, dat.train.y, family = "binomial",lambda=cvfit$lambda.min)
 # age + job + marital + education + balance + housing + loan + contact + day + month + duration + campaign +  poutcome + year
 # basically all but previous, pdays, and default
+# [1] "CV Error Rate:" 0.1703969
 ```
 
 ```{r}
@@ -430,7 +433,7 @@ text(x = .40, y = .6,paste("AUC = ", round(auc.train[[1]],3), sep = ""))
 
 ```{r}
 # try some interactions
-model.complex<-glm(y ~ age+job+marital+education+default+balance+housing+loan+contact+day+month+duration+campaign+pdays+previous+poutcome+year+year:month+year:day, data=train,family = binomial(link="logit"))
+model.complex<-glm(y ~ age+job+marital+education+default+balance+housing+loan+contact+day+month+duration+campaign+pdays+previous+poutcome+year+year:month+year:day+I(duration^2)+I(pdays^2), data=train,family = binomial(link="logit"))
 step(model.main,
      scope = list(upper=model.complex),
      direction="forward",
@@ -438,6 +441,11 @@ step(model.main,
      data=newAuto)
 # Success! looks like yearxday and yearxmonth were significant
 # AIC: 10010
+# Try squaring each of the numerical variables
+# Success! duration^2 is significant too
+# AIC: 9730
+# Success! also pdays^2 is significant
+# AIC: 9726
 ```
 
 ```{r}
@@ -458,6 +466,11 @@ auc.train <- auc.train@y.values
 plot(roc.perf)
 abline(a=0, b= 1)
 text(x = .40, y = .6,paste("AUC = ", round(auc.train[[1]],3), sep = ""))
+
+# confusion matrix for training data:
+train.rf
+# a look at variable importance
+varImpPlot(train.rf)
 ```
 
 ```{r}
@@ -510,4 +523,11 @@ plot(roc.lda,col="blue",add=TRUE)
 plot(roc.rf,col="green",add=TRUE)
 legend("bottomright",legend=c("Lasso","Stepwise", "LDA", "RF"),col=c("black","orange","blue","green"),lty=1,lwd=1)
 abline(a=0, b= 1)
+```
+
+```{r}
+# Confusion matrix for random forest model on test data
+pred.rf.val1.fortable = predict(train.rf,newdata=dat.val1.rf)
+table(observed=dat.val1.rf$y,pred.rf.val1.fortable)
+# maybe we will find out in class if there's a way to change the cutoff for this?
 ```
