@@ -352,6 +352,44 @@ sum(diag(conf.step))/sum(conf.step)
 ```
 
 ```{r}
+# Try a simpler version of step.log (w/o age because it's not sig)
+step.log.1=glm(y ~ job + education + housing + loan + contact + day + month + duration + campaign + poutcome + year, data=train,family=binomial(link="logit"))
+summary(step.log.1)
+# AIC 10327
+fit.pred.step.1<-predict(step.log.1,newdata=test,type="response")
+
+cutoff<-0.5
+class.step.1<-factor(ifelse(fit.pred.step.1>cutoff,"yes","no"),levels=c("no","yes"))
+conf.step.1<-table(class.step.1,test$y)
+print("Confusion matrix for Stepwise.1")
+conf.step.1
+print("Overall accuracy for Stepwise.1")
+sum(diag(conf.step.1))/sum(conf.step.1)
+
+#ROC curves: Step.1 model on test set
+results.step.1<-prediction(fit.pred.step.1, test$y,label.ordering=c("no","yes"))
+roc.step.1 = performance(results.step.1, measure = "tpr", x.measure = "fpr")
+auc.val.step.1 = performance(results.step.1, measure="auc")
+auc.val.step.1 = auc.val.step.1@y.values
+plot(roc.step.1,colorize = TRUE)
+abline(a=0, b= 1)
+text(x = .40, y = .6,paste("AUC = ", round(auc.val.step.1[[1]],3), sep = ""))
+title("Model 1 ROC Curve")
+# AUC=0.875
+
+#Hosmer Lemeshow test for lack of fit.  Use as needed.  The g=10 is an option that deals with the continuous predictors if any are there.
+#This should be increased with caution. 
+hoslem.test(step.log.1$y, fitted(step.log.1), g=10)
+# Rejects (not a surprise.  data set is large)
+
+plot(step.log.1)
+
+summary(step.log.1)
+# Using the summary coefficients we can generate CI for each one in the table
+exp(cbind("Odds ratio" = coef(step.log.1), confint.default(step.log.1, level = 0.95)))
+```
+
+```{r}
 # Code from glmnet_lda_code2_wRF.R
 # NOTE: We need to work on normality. But I thought I'd get the code set up.
 ## LDA
@@ -471,6 +509,10 @@ text(x = .40, y = .6,paste("AUC = ", round(auc.train[[1]],3), sep = ""))
 train.rf
 # a look at variable importance
 varImpPlot(train.rf)
+
+# Try looking for optimal value of mtry
+tuneRF(dat.train.rf[,-17], dat.train.rf[,17], stepfactor=1)
+# indicates mtry=4 is best
 ```
 
 ```{r}
