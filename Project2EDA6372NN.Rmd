@@ -968,6 +968,92 @@ vif(model.main)
 # that looks fine.
 ```
 
+```{r}
+# Plots for paper
+# to show why we took out 2008
+plot(bank.full$y~bank.full$year,col=c("red","blue"),ylab="Term Deposit (Yes/No)",
+     xlab="Year",main="Term Deposits by Year")
+```
+
+```{r}
+# to illustrate interaction of month and year
+p1=train %>%
+  ggplot(aes(x=month,fill=y)) +
+  geom_bar(position="dodge") +
+  facet_wrap(vars(year)) +
+  ylab("Count") +
+  xlab("Month") +
+  ggtitle("Term Deposit (yes/no) by Month and Year") +
+  theme(axis.text.x.bottom = element_text(angle=90))
+p1
+```
+
+```{r}
+# to illustrate why we don't need pcontact dummy variable for pdays
+bank.full %>% 
+  ggplot(aes(x=poutcome, fill=pcontact)) + 
+  geom_bar(position="fill") + 
+  scale_fill_viridis_d() +
+  ylab("Proportion") +
+  ggtitle("Poutcome vs Pcontact")+
+  labs(subtitle="1 = Not Previously Contacted")
+
+bank.full %>% filter(poutcome=="unknown") %>% group_by(pcontact) %>% summarise(count=n())
+
+#   pcontact count
+#   <fct>    <int>
+# 1 0            5
+# 2 1        36954
+
+# all but 5 of the poutcome unknowns are "not previously contacted"
+bank.full %>% filter(poutcome!="unknown") %>% group_by(pcontact) %>% summarise(count=n())
+# no "not previously contacted" in the other 3 groups
+```
+
+```{r}
+# summary stats for train data set
+library(gtsummary)
+train %>% tbl_summary(statistic = list(all_continuous() ~ "{mean} ({sd}) {min} {max}",
+                                       all_categorical() ~ "{n} ({p}%)")) %>%
+  add_stat_label(label=c(all_continuous() ~ c("Mean (SD) Min Max"), all_categorical() ~ c("n (%)")))
+# best to save it as an html and screenshot
+```
+
+```{r}
+# to show some important variables that come up in Model 1
+plot(bank.full.new$y~bank.full.new$poutcome,col=c("red","blue"), ylab="Term Deposit (yes/no)",
+     xlab="Poutcome",main="Term Deposits by Poutcome")
+bank.full.new %>%
+  ggplot(aes(x=y, y=duration, color=y)) +
+  geom_boxplot() +
+  scale_fill_viridis_d() +
+  ggtitle("Term Deposit vs Duration") +
+  xlab("Term Deposit")
+```
+
+```{r}
+# Correlations for linear variables in training data
+pairs(train[,c(1,6,10,12,13,14,15)])
+my.cor<-cor(train[,c(1,6,10,12,13,14,15)])
+my.cor
+pairs(train[,c(1,6,10,12,13,14,15)],col=train$y)
+ggpairs(train[,c(1,6,10,12,13,14,15)])
+ggpairs(train[,c(1,6,10,12,13,14,15)],ggplot2::aes(colour=train$y))
+
+# Heatmap
+library(gplots)
+library(ggplot2)
+heatmap.2(my.cor,col=bluered(75), 
+          density.info="none", trace="none", dendrogram=c("row"), 
+          symm=F,symkey=T,symbreaks=T, scale="none",cexRow=1, cexCol=1)
+# previous and pdays correlation = 0.47.
+# dendrogram separates out the variables about previous contact.
+```
+
+```{r}
+
+```
+
 
 
 Summary (tl;dr)
