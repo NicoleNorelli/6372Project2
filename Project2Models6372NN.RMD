@@ -365,7 +365,14 @@ print("Confusion matrix for Stepwise.1")
 conf.step.1
 print("Overall accuracy for Stepwise.1")
 sum(diag(conf.step.1))/sum(conf.step.1)
-
+# [1] "Confusion matrix for Stepwise.1"
+#             
+# class.step.1   no  yes
+#          no  2529  426
+#          yes  187  354
+# [1] "Overall accuracy for Stepwise.1"
+# [1] 0.8246568
+         
 #ROC curves: Step.1 model on test set
 results.step.1<-prediction(fit.pred.step.1, test$y,label.ordering=c("no","yes"))
 roc.step.1 = performance(results.step.1, measure = "tpr", x.measure = "fpr")
@@ -627,33 +634,39 @@ ME
 # Code from HW 12
 # ROC Curve comparison
 
-# Step
-fit.pred.step<-predict(step.log,newdata=test,type="response")
-results.step<-prediction(fit.pred.step, test$y,label.ordering=c("no","yes"))
-roc.step = performance(results.step, measure = "tpr", x.measure = "fpr")
-
-# LASSO
-fit.pred.lasso <- predict(finalmodel, newx = dat.test.x, type = "response")
-results.lasso <- prediction(fit.pred.lasso[,1], dat.test.y)
-roc.lasso = performance(results.lasso, measure = "tpr", x.measure = "fpr")
-
-# LDA
-pred.lda1 <- predict(fit.lda, newdata = lda.test.x)
-results.lda <- prediction(preds1[,2],lda.test.y)
-roc.lda = performance(results.lda, measure = "tpr", x.measure = "fpr")
-
-# Random Forest
-pred.rf.val1<-predict(train.rf,newdata=dat.val1.rf,type="prob")
-results.rf <- prediction(pred.rf.val1[,2], dat.val1.rf$y)
-roc.rf = performance(results.rf, measure = "tpr", x.measure = "fpr")
+# Step.log.1 (simple logistic model)
+fit.pred.step.1<-predict(step.log.1,newdata=test,type="response")
+results.step.1<-prediction(fit.pred.step.1, test$y,label.ordering=c("no","yes"))
+roc.step = performance(results.step.1, measure = "tpr", x.measure = "fpr")
 
 
-plot(roc.lasso)
-plot(roc.step,col="orange", add = TRUE)
-plot(roc.lda,col="blue",add=TRUE)
+# Complex logistic (step.log.complex.noyr)
+# Code in Project2ComplexModels6372NN
+fit.pred.step.complex.noyr<-predict(step.log.complex.noyr,newdata=test,type="response")
+results.step.complex<-prediction(fit.pred.step.complex.noyr, test$y,label.ordering=c("no","yes"))
+roc.step.complex = performance(results.step.complex, measure = "tpr", x.measure = "fpr")
+
+# QDA
+pred.qda1 <- predict(fit.qda, newdata = lda.test.x)
+preds1 <- pred.qda1$posterior
+preds1 <- as.data.frame(preds1)
+pred1 <- prediction(preds1[,2],lda.test.y)
+roc.qda = performance(pred1, measure = "tpr", x.measure = "fpr")
+
+
+# Random Forest (train.rf.1 - no year )
+pred.val1.1<-predict(train.rf.1,newdata=dat.val1.rf.1,type="prob")
+pred.rf.1 <- prediction(pred.val1.1[,2], dat.val1.rf.1$y)
+roc.rf = performance(pred.rf.1, measure = "tpr", x.measure = "fpr")
+
+
+plot(roc.step)
+plot(roc.step.complex,col="orange", add = TRUE)
+plot(roc.qda,col="blue",add=TRUE)
 plot(roc.rf,col="green",add=TRUE)
-legend("bottomright",legend=c("Lasso","Stepwise", "LDA", "RF"),col=c("black","orange","blue","green"),lty=1,lwd=1)
+legend("bottomright",legend=c("Simple Logistic (Model 1)","Complex Logistic (Model 2)", "QDA (Model 3)", "Random Forest (Model 4)"),col=c("black","orange","blue","green"),lty=1,lwd=1)
 abline(a=0, b= 1)
+title("ROC Model Comparisons")
 ```
 
 ```{r}
