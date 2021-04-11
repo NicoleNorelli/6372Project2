@@ -1051,7 +1051,18 @@ heatmap.2(my.cor,col=bluered(75),
 ```
 
 ```{r}
+# PCA of training data for write-up
 
+# This includes: age, balance, day, duration, campaign, pdays, previous
+pc.result<-prcomp(train[,c(1,6,10,12,13,14,15)],scale.=TRUE)
+pc.scores<-pc.result$x
+pc.scores<-data.frame(pc.scores)
+pc.scores$y<-train$y
+
+#Use ggplot2 to plot the first few pc's
+ggplot(data = pc.scores, aes(x = PC1, y = PC2)) +
+  geom_point(aes(col=y), size=1)+
+  ggtitle("PCA of Training Data: PC1 vs PC2")
 ```
 
 
