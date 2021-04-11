@@ -1,0 +1,277 @@
+---
+title: "Final Models 6372 Project 2"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+# Load CSV file:
+# bank.full.csv file
+bank.full <- read.csv("~/Downloads/bank/bank-full.csv", sep=";", stringsAsFactors=TRUE)
+# Because these seem to be sequentially ordered, make a ID number in order
+bank.full = bank.full %>%
+  mutate(id = row_number())
+
+# Now add in the year variable
+bank.full = bank.full %>%
+  mutate(year = case_when(id>=1 & id<=27729 ~ '2008',
+                          id>=27730 & id<=42591 ~ '2009',
+                          id>=42592 ~ '2010'))
+bank.full$year = factor(bank.full$year)
+
+# Let's reorder month so it makes sense on graphs
+bank.full$month = factor(bank.full$month, levels=c("jan","feb","mar","apr","may","jun","jul","aug","sep","oct","nov","dec"))
+
+# Change pdays -1 to 0:
+bank.full$pdays[bank.full$pdays==-1] = 0
+
+# Remove outlier (other in 2008)
+bank.full = subset(bank.full, previous != 275)
+
+# Remove 2008
+bank.full.new = bank.full %>%
+  filter(year != 2008)
+# Drop level 2008
+bank.full.new$year = droplevels(bank.full.new$year)
+```
+
+```{r}
+# train test split
+# 80/20 would be: 13985:3496
+set.seed(1234)
+index<-sample(1:dim(bank.full.new)[1],3496,replace=F)
+test<-bank.full.new[index,]
+train<-bank.full.new[-index,]
+```
+
+```{r}
+library(ROCR)
+library(ResourceSelection)
+# Model 1 (Simple Logistic)
+# Try a custom version of step.log (stepwise model selection using AIC) w/o age because it's not sig
+step.log.1=glm(y ~ job + education + housing + loan + contact + day + month + duration + campaign + poutcome + year, data=train,family=binomial(link="logit"))
+summary(step.log.1)
+# AIC 10327
+fit.pred.step.1<-predict(step.log.1,newdata=test,type="response")
+
+cutoff<-0.5
+class.step.1<-factor(ifelse(fit.pred.step.1>cutoff,"yes","no"),levels=c("no","yes"))
+conf.step.1<-table(class.step.1,test$y)
+print("Confusion matrix for Stepwise.1")
+conf.step.1
+print("Overall accuracy for Stepwise.1")
+sum(diag(conf.step.1))/sum(conf.step.1)
+# [1] "Confusion matrix for Stepwise.1"
+#             
+# class.step.1   no  yes
+#          no  2529  426
+#          yes  187  354
+# [1] "Overall accuracy for Stepwise.1"
+# [1] 0.8246568
+         
+#ROC curves: Step.1 model on test set
+results.step.1<-prediction(fit.pred.step.1, test$y,label.ordering=c("no","yes"))
+roc.step.1 = performance(results.step.1, measure = "tpr", x.measure = "fpr")
+auc.val.step.1 = performance(results.step.1, measure="auc")
+auc.val.step.1 = auc.val.step.1@y.values
+plot(roc.step.1,colorize = TRUE)
+abline(a=0, b= 1)
+text(x = .40, y = .6,paste("AUC = ", round(auc.val.step.1[[1]],3), sep = ""))
+title("Model 1 ROC Curve")
+# AUC=0.875
+
+#Hosmer Lemeshow test for lack of fit.  Use as needed.  The g=10 is an option that deals with the continuous predictors if any are there.
+#This should be increased with caution. 
+hoslem.test(step.log.1$y, fitted(step.log.1), g=10)
+# Rejects (not a surprise.  data set is large)
+
+plot(step.log.1)
+
+summary(step.log.1)
+# Using the summary coefficients we can generate CI for each one in the table
+exp(cbind("Odds ratio" = coef(step.log.1), confint.default(step.log.1, level = 0.95)))
+```
+
+```{r}
+library(MASS)
+library(car)
+# Model 2: Complex Logistic
+# try step.log.complex w/o year or year interactions:
+full.log.complex.noyr<-glm(y ~ age+job+marital+education+default+balance+housing+loan+contact+day+month+duration+campaign+pdays+previous+poutcome+I(duration^2)+I(pdays^2),family="binomial",data=train)
+step.log.complex.noyr<-full.log.complex.noyr %>% stepAIC(trace=FALSE)
+coef(step.log.complex.noyr)
+summary(step.log.complex.noyr)
+exp(cbind("Odds ratio" = coef(step.log.complex.noyr), confint.default(step.log.complex.noyr, level = 0.95)))
+vif(step.log.complex.noyr)
+# y ~ age + job + marital + education + housing + loan + contact + day + month + duration + campaign + pdays + previous + poutcome + I(duration^2) + I(pdays^2)
+# AIC 10243
+```
+
+```{r}
+#Making predictions for complex logistic (Model 2)
+fit.pred.step.complex.noyr<-predict(step.log.complex.noyr,newdata=test,type="response")
+cutoff<-0.5
+class.step.complex.noyr<-factor(ifelse(fit.pred.step.complex.noyr>cutoff,"yes","no"),levels=c("no","yes"))
+conf.step.complex.noyr<-table(class.step.complex.noyr,test$y)
+print("Confusion matrix for Stepwise")
+conf.step.complex.noyr
+print("Overall accuracy for Stepwise")
+sum(diag(conf.step.complex.noyr))/sum(conf.step.complex.noyr)
+
+# class.step.complex.noyr   no  yes
+#                     no  2511  421
+#                     yes  205  359
+#[1] 0.8209382
+
+#ROC curves: Step model on test set
+results.step.complex<-prediction(fit.pred.step.complex.noyr, test$y,label.ordering=c("no","yes"))
+roc.step.complex = performance(results.step.complex, measure = "tpr", x.measure = "fpr")
+auc.val.step.complex = performance(results.step.complex, measure="auc")
+auc.val.step.complex = auc.val.step.complex@y.values
+plot(roc.step.complex,colorize = TRUE)
+abline(a=0, b= 1)
+text(x = .40, y = .6,paste("AUC = ", round(auc.val.step.complex[[1]],3), sep = ""))
+title("Complex Logistic Model ROC Curve")
+# AUC=0.871
+```
+
+```{r}
+# QDA (Model 3)
+#Training Set
+lda.train.x <- train[,c(1,6,10,12,13,14,15)]
+lda.train.y <- train$y
+fit.qda <- qda(lda.train.y ~ ., data = lda.train.x)
+lda.test.x <- test[,c(1,6,10,12,13,14,15)]
+lda.test.y <- test$y
+pred.qda1 <- predict(fit.qda, newdata = lda.test.x)
+
+preds1 <- pred.qda1$posterior
+preds1 <- as.data.frame(preds1)
+
+pred1 <- prediction(preds1[,2],lda.test.y)
+roc.perf = performance(pred1, measure = "tpr", x.measure = "fpr")
+auc.train <- performance(pred1, measure = "auc")
+auc.train <- auc.train@y.values
+plot(roc.perf, colorize=TRUE)
+abline(a=0, b= 1)
+text(x = .40, y = .6,paste("AUC = ", round(auc.train[[1]],3), sep = ""))
+title("QDA ROC Curve")
+# AUC = 0.731
+
+# Confusion matrix for QDA on test data
+pred.qda.cm<-predict(fit.qda,newdata=lda.test.x)$class 
+Truth<-lda.test.y
+x<-table(pred.qda.cm,Truth) # Creating a confusion matrix
+x
+#Missclassification Error
+ME<-(x[2,1]+x[1,2])/3496  #change denom to N
+ME
+#Calculating overall accuracy
+1-ME
+
+#            Truth
+# pred.qda.cm   no  yes
+#         no  2504  558
+#         yes  212  222
+# [1] 0.2202517
+# [1] 0.7797483
+```
+
+```{r}
+# Random Forest (Model 4)
+library(randomForest)
+# RF w/o year (for practical prediction purposes)
+dat.train.rf.1 <- train[,-(18:19)]
+
+train.rf.1<-randomForest(y~.,data=dat.train.rf.1,mtry=4,ntree=500,importance=T)
+dat.val1.rf.1 = test[,-(18:19)]
+pred.val1.1<-predict(train.rf.1,newdata=dat.val1.rf.1,type="prob")
+pred.rf.1 <- prediction(pred.val1.1[,2], dat.val1.rf.1$y)
+roc.perf.rf.1 = performance(pred.rf.1, measure = "tpr", x.measure = "fpr")
+auc.train <- performance(pred.rf.1, measure = "auc")
+auc.train <- auc.train@y.values
+plot(roc.perf.rf.1, colorize=TRUE)
+abline(a=0, b= 1)
+text(x = .40, y = .6,paste("AUC = ", round(auc.train[[1]],3), sep = ""))
+title("Random Forest ROC Curve")
+# AUC=.891  Not a huge decline
+
+varImpPlot(train.rf.1, main="Variable Importance Plot for Random Forest Model")
+
+# Confusion Matrix for train.rf.1 on test set data
+#Making predictions on test and then observing accuracy rates
+pred.rf.1.cm<-predict(train.rf.1,newdata=dat.val1.rf.1,type="response")
+x=table(pred.rf.1.cm,dat.val1.rf.1$y) #Default prediction uses .5 as cut off you can change it specifying "cutoff" option
+
+x
+#Missclassification Error
+ME<-(x[2,1]+x[1,2])/3496  #change denom to N
+ME
+#Calculating overall accuracy
+1-ME
+
+# pred.rf.1.cm   no  yes
+#          no  2454  318
+#          yes  262  462
+# [1] 0.1659039
+# [1] 0.8340961
+```
+
+```{r}
+# Try looking for optimal value of mtry
+tuneRF(dat.train.rf.1[,-17], dat.train.rf.1[,17], stepfactor=1)
+# indicates mtry=4 is best
+```
+
+```{r}
+# Try adjusting the cut-off for train.rf.1
+pred.rf.1.cm<-predict(train.rf.1,newdata=dat.val1.rf.1,type="response",cutoff=c(.8,1-.8))
+x=table(pred.rf.1.cm,dat.val1.rf.1$y) #Default prediction uses .5 as cut off you can change it specifying "cutoff" option
+x
+ME<-(x[2,1]+x[1,2])/3496  #change denom to N
+ME
+#Calculating overall accuracy
+1-ME
+```
+
+```{r}
+# ROC Curve comparison
+
+# Step.log.1 (simple logistic model)
+fit.pred.step.1<-predict(step.log.1,newdata=test,type="response")
+results.step.1<-prediction(fit.pred.step.1, test$y,label.ordering=c("no","yes"))
+roc.step = performance(results.step.1, measure = "tpr", x.measure = "fpr")
+
+
+# Complex logistic (step.log.complex.noyr)
+# Code in Project2ComplexModels6372NN
+fit.pred.step.complex.noyr<-predict(step.log.complex.noyr,newdata=test,type="response")
+results.step.complex<-prediction(fit.pred.step.complex.noyr, test$y,label.ordering=c("no","yes"))
+roc.step.complex = performance(results.step.complex, measure = "tpr", x.measure = "fpr")
+
+# QDA
+pred.qda1 <- predict(fit.qda, newdata = lda.test.x)
+preds1 <- pred.qda1$posterior
+preds1 <- as.data.frame(preds1)
+pred1 <- prediction(preds1[,2],lda.test.y)
+roc.qda = performance(pred1, measure = "tpr", x.measure = "fpr")
+
+
+# Random Forest (train.rf.1 - no year )
+pred.val1.1<-predict(train.rf.1,newdata=dat.val1.rf.1,type="prob")
+pred.rf.1 <- prediction(pred.val1.1[,2], dat.val1.rf.1$y)
+roc.rf = performance(pred.rf.1, measure = "tpr", x.measure = "fpr")
+
+
+plot(roc.step)
+plot(roc.step.complex,col="orange", add = TRUE)
+plot(roc.qda,col="blue",add=TRUE)
+plot(roc.rf,col="green",add=TRUE)
+legend("bottomright",legend=c("Simple Logistic (Model 1)","Complex Logistic (Model 2)", "QDA (Model 3)", "Random Forest (Model 4)"),col=c("black","orange","blue","green"),lty=1,lwd=1)
+abline(a=0, b= 1)
+title("ROC Model Comparisons")
+```
