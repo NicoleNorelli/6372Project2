@@ -97,6 +97,25 @@ exp(cbind("Odds ratio" = coef(step.log.1), confint.default(step.log.1, level = 0
 ```
 
 ```{r}
+# Adjust cutoff for simple Model 1
+cutoff<-0.2
+class.step.1<-factor(ifelse(fit.pred.step.1>cutoff,"yes","no"),levels=c("no","yes"))
+conf.step.1<-table(class.step.1,test$y)
+print("Confusion matrix for Stepwise.1")
+conf.step.1
+print("Overall accuracy for Stepwise.1")
+sum(diag(conf.step.1))/sum(conf.step.1)
+# [1] "Confusion matrix for Stepwise.1"
+#             
+# class.step.1   no  yes
+#          no  2110  137
+#          yes  606  643
+# [1] "Overall accuracy for Stepwise.1"
+# [1] 0.7874714
+# Sensitivity: 0.8128, Specificity: 0.7769
+```
+
+```{r}
 library(MASS)
 library(car)
 # Model 2: Complex Logistic
@@ -138,6 +157,27 @@ text(x = .40, y = .6,paste("AUC = ", round(auc.val.step.complex[[1]],3), sep = "
 title("Complex Logistic Model ROC Curve")
 # AUC=0.871
 ```
+
+```{r}
+# Adjust cutoff for complex logistic (Model 2)
+fit.pred.step.complex.noyr<-predict(step.log.complex.noyr,newdata=test,type="response")
+cutoff<-0.2
+class.step.complex.noyr<-factor(ifelse(fit.pred.step.complex.noyr>cutoff,"yes","no"),levels=c("no","yes"))
+conf.step.complex.noyr<-table(class.step.complex.noyr,test$y)
+print("Confusion matrix for Stepwise")
+conf.step.complex.noyr
+print("Overall accuracy for Stepwise")
+sum(diag(conf.step.complex.noyr))/sum(conf.step.complex.noyr)
+# [1] "Confusion matrix for Stepwise"
+#                        
+# class.step.complex.noyr   no  yes
+#                     no  2064  126
+#                     yes  652  654
+# [1] "Overall accuracy for Stepwise"
+# [1] 0.77746
+# Sensitivity: 0.8385, Specificity: 0.7599
+```
+
 
 ```{r}
 # QDA (Model 3)
@@ -182,8 +222,30 @@ ME
 ```
 
 ```{r}
+# Try different cut-off for QDA on test data
+pred.qda.cm<-predict(fit.qda,newdata=lda.test.x,type="response")
+cutoff<-0.15
+pred.qda.cm.cutoff<-factor(ifelse(pred.qda.cm$posterior[,2] >cutoff,"yes","no"),levels=c("no","yes"))
+x<-table(pred.qda.cm.cutoff,lda.test.y)
+x
+#Missclassification Error
+ME<-(x[2,1]+x[1,2])/3496  #change denom to N
+ME
+#Calculating overall accuracy
+1-ME
+
+#                   lda.test.y
+# pred.qda.cm.cutoff   no  yes
+#                no  1908  276
+#                yes  808  504
+# [1] 0.6899314
+# Sensitivity: 0.6462, Specificity: 0.7025
+```
+
+```{r}
 # Random Forest (Model 4)
 library(randomForest)
+set.seed(1122)
 # RF w/o year (for practical prediction purposes)
 dat.train.rf.1 <- train[,-(18:19)]
 
@@ -229,13 +291,19 @@ tuneRF(dat.train.rf.1[,-17], dat.train.rf.1[,17], stepfactor=1)
 
 ```{r}
 # Try adjusting the cut-off for train.rf.1
-pred.rf.1.cm<-predict(train.rf.1,newdata=dat.val1.rf.1,type="response",cutoff=c(.8,1-.8))
+pred.rf.1.cm<-predict(train.rf.1,newdata=dat.val1.rf.1,type="response",cutoff=c(.8,1-.8)) #threshold for no then yes
 x=table(pred.rf.1.cm,dat.val1.rf.1$y) #Default prediction uses .5 as cut off you can change it specifying "cutoff" option
 x
 ME<-(x[2,1]+x[1,2])/3496  #change denom to N
 ME
 #Calculating overall accuracy
 1-ME
+
+# pred.rf.1.cm   no  yes
+#          no  2026   69
+#          yes  690  711
+# [1] 0.2171053
+# [1] 0.7828947
 ```
 
 ```{r}
