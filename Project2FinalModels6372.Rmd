@@ -51,6 +51,7 @@ train<-bank.full.new[-index,]
 ```{r}
 library(ROCR)
 library(ResourceSelection)
+library(car)
 # Model 1 (Simple Logistic)
 # Try a custom version of step.log (stepwise model selection using AIC) w/o age because it's not sig
 step.log.1=glm(y ~ job + education + housing + loan + contact + day + month + duration + campaign + poutcome + year, data=train,family=binomial(link="logit"))
@@ -94,6 +95,7 @@ plot(step.log.1)
 summary(step.log.1)
 # Using the summary coefficients we can generate CI for each one in the table
 exp(cbind("Odds ratio" = coef(step.log.1), confint.default(step.log.1, level = 0.95)))
+vif(step.log.1)
 ```
 
 ```{r}
