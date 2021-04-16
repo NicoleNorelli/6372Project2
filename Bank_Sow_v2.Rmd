@@ -1,0 +1,1952 @@
+---
+title: "Untitled"
+output:
+  html_document: default
+  pdf_document: default
+  word_document: default
+---
+
+```{r Intro}
+#Title: "MSDS 6372 Group Project 2: Bank Project - Predicting if a customer will subscribe to a term deposit."
+#Group Members: Nicole Norelli,Nneanna Okpara,Sowmya Mani
+#Date: March 25 2021
+
+#Introduction: This Project is about the Bank Market Analysis to predict if a customer will subscribe to a term deposit
+
+#The data set used for this analysis consists of Bank Full Data:
+#Citation:
+#This dataset is public available for research. The details are described in [Moro et al., 2011]. 
+#[Moro et al., 2011] S. Moro, R. Laureano and P. Cortez. Using Data Mining for Bank Direct Marketing: An Application of the CRISP-DM Methodology. 
+#In P. Novais et al. (Eds.), Proceedings of the European Simulation and Modelling Conference - ESM'2011, pp. 117-121, Guimarães, Portugal, October, 2011. EUROSIS.
+#Available at: [pdf] http://hdl.handle.net/1822/14838
+#               [bib] http://www3.dsi.uminho.pt/pcortez/bib/2011-esm-1.txt
+#Bank Full.csv and Bank.csv
+
+##### Bank client data #####
+#1 - age (numeric)
+#2 - job : type of job (categorical:"admin.","unknown","unemployed","management","housemaid","entrepreneur","student",
+#                                     "blue-collar","self-employed","retired","technician","services") 
+#3 - marital : marital status (categorical: "married","divorced","single"; note: "divorced" means divorced or widowed)
+#4 - education (categorical: "unknown","secondary","primary","tertiary")
+#5 - default: has credit in default? (binary: "yes","no")
+#6 - balance: average yearly balance, in euros (numeric) 
+#7 - housing: has housing loan? (binary: "yes","no")
+#8 - loan: has personal loan? (binary: "yes","no")
+##### related with the last contact of the current campaign #####
+#9 - contact: contact communication type (categorical: "unknown","telephone","cellular") 
+#10 - day: last contact day of the month (numeric)
+#11 - month: last contact month of year (categorical: "jan", "feb", "mar", ..., "nov", "dec")
+#12 - duration: last contact duration, in seconds (numeric)
+##### other attributes #####
+#13 - campaign: number of contacts performed during this campaign and for this client (numeric, includes last contact)
+#14 - pdays: number of days that passed by after the client was last contacted from a previous campaign (numeric, -1 means client was not previously contacted)
+#15 - previous: number of contacts performed before this campaign and for this client (numeric)
+#16 - poutcome: outcome of the previous marketing campaign (categorical: "unknown","other","failure","success")
+
+##### Output variable (desired target) #####
+#17 - y - has the client subscribed a term deposit? (binary: "yes","no")
+
+#plot(model.name)
+
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r Libraries}
+#Libraries loaded for the ANalysis
+library(XML) 
+library(dplyr)
+library(RCurl)
+library(httr)
+library(jsonlite)
+library(tidyverse)
+library(naniar)
+library(GGally)
+library(ggplot2)
+library(class)
+library(caret)
+library(knnp)
+library(e1071)
+library(ggplot2)
+library(maps)
+library(dplyr)
+library(mapproj)
+library(ggplot2)
+library(dplyr)
+library(ggcorrplot)
+library(GGally)
+library(viridis)
+library(gplots)
+library(leaps)
+library(matrixStats)
+library(ResourceSelection)
+library(MASS)
+library(glmnet)
+library(ROCR)
+library(randomForest)
+library(tidyverse)
+library(dplyr)
+library(naniar)
+library(GGally)
+library(ggplot2)
+library(class)
+library(caret)
+library(e1071)
+library(ggcorrplot)
+library(magrittr)
+library(dplyr)
+library(tidyr)
+library(naniar)
+library(ggplot2)
+library(plotly)
+library(forcats)
+library(GGally)
+library(ggcorrplot)
+library(car)
+library(ISLR)
+library(leaps)
+library(matrixStats)
+library(leaps)
+library(olsrr)
+library(OLScurve)
+library(glmnet)
+
+#Import the Bank Full Data
+Bank_Full<-read.csv('C:/Sowmya/SMU/03_Applied Stats/Group Project 2/bank-full.csv' ,sep=";")
+
+#Quick Peek at the SUmmary data of the available dataset
+summary(Bank_Full)
+str(Bank_Full)
+
+#Checking for Missing Data
+sapply(Bank_Full,function(x) sum(is.na(x)))
+gg_miss_var(Bank_Full)+xlab("Missing Variables")
+
+#The Bank dataset has 45,211  observations with 17 variables providing more information on the Bank Clients.There is no missing data in the data set
+
+# missing values using other than NA (Find the Unknowns in the data)
+sapply(Bank_Full, function(x) sum(x %in% 'unknown'))
+#We find 288 unknowns in the job category, 1,857 in education, 13,020 in contact, 36,959 in poutcome
+
+Bank_Full_NA = Bank_Full %>%
+  dplyr::na_if('unknown')
+sapply(Bank_Full_NA, function(x) sum(is.na(x)))
+
+#Change unknown to NA 
+gg_miss_var(Bank_Full_NA)
+
+# This is interesting: 
+# Contact (contact communication type) is missing in a block from May 5 to partway through July 4, so it's not random
+# Similar issue with poutcome (outcome of previous marketing campaign). Values start to fill in around late October. Of course there's a lot more missing in this one.
+# Another thing to note: Because this data spans 2+ years (it seems to be in calendar order), It would be better if we should put a year variable in to keep track...
+summary(Bank_Full_NA)
+# Note: pdays: -1 means not previously contacted.Need to see how this can be handled
+
+```
+
+```{r EDA}
+#The data seem to be sequentially ordered, adding an ID number in order
+Bank_Full = Bank_Full %>%
+  mutate(id = row_number())
+# Adding a new variable to include year which could add more insights to the data
+Bank_Full = Bank_Full %>%
+  mutate(year = case_when(id>=1 & id<=27729 ~ '2008',
+                          id>=27730 & id<=42591 ~ '2009',
+                          id>=42592 ~ '2010'))
+Bank_Full$year = factor(Bank_Full$year)
+
+# Let's reorder month so it makes sense on graphs
+Bank_Full$month = factor(Bank_Full$month, levels=c("jan","feb","mar","apr","may","jun","jul","aug","sep","oct","nov","dec"))
+
+# A look at categorical
+ggpairs(Bank_Full,columns=c(2:5,7:9,11,16:17),aes(colour=y)) # that's a little busy, let's break it down
+
+#Analyzing the data with plots
+str(Bank_Full)
+#attach(Bank_Full)
+#Response
+Bank_Full %>% 
+  ggplot(aes(x=y, fill=y)) + 
+  geom_bar(position="stack") + 
+  scale_fill_viridis_d() +
+  ylab("Proportion") +xlab("Term Deposit")+
+  ggtitle("Proportion Subscribed to Term Deposit")+ theme(axis.text.x = element_text(angle=90, hjust=1))
+#The count of Yes is 11% and No is 89% on term deposit
+
+#Bank_Full %>%    count(y)
+#No s count 39,922; Yes count 5,289	
+
+# Age vs response
+t(aggregate(age~y,data=Bank_Full,summary))
+Bank_Full %>% 
+  ggplot(aes(x=age, fill=y)) + 
+  geom_bar(position="fill") + 
+  scale_fill_viridis_d() +
+  ylab("Proportion") +xlab("Age")+
+  ggtitle("Proportion Subscribed to Term Deposit by Age")+ theme(axis.text.x = element_text(angle=90, hjust=1))
+#The older the age the higher proportions of Yes to a term deposit
+#Age and term deposit seems to be correlated.
+
+# Job vs response
+prop.table(table(Bank_Full$y,Bank_Full$job),2)
+Bank_Full %>% 
+  ggplot(aes(x=job, fill=y)) + 
+  geom_bar(position="fill") + 
+  scale_fill_viridis_d() +
+  ylab("Proportion") +xlab("Job")+
+  ggtitle("Proportion Subscribed to Term Deposit by Job")+ theme(axis.text.x = element_text(angle=90, hjust=1))
+#Looks like retired and students are on the higher proportions of Yes to a term deposit
+
+# Marital vs response
+prop.table(table(Bank_Full$y,Bank_Full$marital),2)
+Bank_Full %>% 
+  ggplot(aes(x=marital, fill=y)) + 
+  geom_bar(position="fill") + 
+  scale_fill_viridis_d() +
+  ylab("Proportion") + xlab("Marital")+
+  ggtitle("Proportion Subscribed to Term Deposit by Marital")+ theme(axis.text.x = element_text(angle=90, hjust=1))
+# Slightly higher for singles
+
+# Education vs response
+prop.table(table(Bank_Full$y,Bank_Full$education),2)
+Bank_Full %>% 
+  ggplot(aes(x=education, fill=y)) + 
+  geom_bar(position="fill") + 
+  scale_fill_viridis_d() +
+  ylab("Proportion") +xlab("Education")+
+  ggtitle("Proportion Subscribed to Term Deposit by Education")+ theme(axis.text.x = element_text(angle=90, hjust=1))
+# Looks like it increases slightly as education increases
+
+# default vs response
+prop.table(table(Bank_Full$y,Bank_Full$default),2)
+Bank_Full %>% 
+  ggplot(aes(x=default, fill=y)) + 
+  geom_bar(position="fill") + 
+  scale_fill_viridis_d() +
+  ylab("Proportion") +xlab("Default")+
+  ggtitle("Proportion Subscribed to Term Deposit by Default")+ theme(axis.text.x = element_text(angle=90, hjust=1))
+# Higher for those who have less credit, but there are very few defaults relatively, so it might not be that useful
+
+# housing vs response
+prop.table(table(Bank_Full$y,Bank_Full$housing),2)
+Bank_Full %>% 
+  ggplot(aes(x=housing, fill=y)) + 
+  geom_bar(position="fill") + 
+  scale_fill_viridis_d() +
+  ylab("Proportion") +xlab("Housing")+
+  ggtitle("Proportion Subscribed to Term Deposit by Housing")+ theme(axis.text.x = element_text(angle=90, hjust=1))
+# Higher for clients with no housing loans, this looks like a good variable 
+
+# loan vs response
+prop.table(table(Bank_Full$y,Bank_Full$loan),2)
+Bank_Full %>% 
+  ggplot(aes(x=loan, fill=y)) + 
+  geom_bar(position="fill") + 
+  scale_fill_viridis_d() +
+  ylab("Proportion") +xlab("Loan")+
+  ggtitle("Proportion Subscribed to Term Deposit by Loan")+ theme(axis.text.x = element_text(angle=90, hjust=1))
+# Higher for clients with no loans, although most people are in the no category for loan anyway
+
+# contact vs response
+prop.table(table(Bank_Full$y,Bank_Full$contact),2)
+Bank_Full %>% 
+  ggplot(aes(x=contact, fill=y)) + 
+  geom_bar(position="fill") + 
+  scale_fill_viridis_d() +
+  ylab("Proportion") +xlab("Contact")+
+  ggtitle("Proportion Subscribed to Term Deposit by Contact")+ theme(axis.text.x = element_text(angle=90, hjust=1))
+# This doesn't seem like it's going to be a good variable anyway, so maybe all the NAs won't be an issue.The clients contacted through cellular seemed to have opened a term deposit.
+
+# month vs response
+prop.table(table(Bank_Full$y,Bank_Full$month),2)
+Bank_Full %>% 
+  ggplot(aes(x=month, fill=y)) + 
+  geom_bar(position="fill") + 
+  scale_fill_viridis_d() +
+  ylab("Proportion") +xlab("Month")+
+  ggtitle("Proportion Subscribed to Term Deposit by Month")+ theme(axis.text.x = element_text(angle=90, hjust=1))
+# This is interesting.  Higher proportions in Dec, Mar, Oct, Sept; however, those seem to be the months with less data...
+summary(Bank_Full$month)
+# Dec only has 214, Mar has 477, Oct has 738, Sept has 579.  All the other months have 1403-13766
+# also see breakdown by year
+
+# outcome vs response
+prop.table(table(Bank_Full$y,Bank_Full$poutcome),2)
+Bank_Full %>% 
+  ggplot(aes(x=poutcome, fill=y)) + 
+  geom_bar(position="fill") + 
+  scale_fill_viridis_d() +
+  ylab("Proportion") +xlab("Poutcome")+
+  ggtitle("Proportion Subscribed to Term Deposit by Poutcome")+ theme(axis.text.x = element_text(angle=90, hjust=1))
+# Well, even though we have a lot of NAs, success is a really strong predictor of our outcome
+# We probably need to find a way to incorporate that.
+
+# year vs response
+prop.table(table(Bank_Full$y,Bank_Full$year),2)
+Bank_Full %>% 
+  ggplot(aes(x=year, fill=y)) + 
+  geom_bar(position="fill") + 
+  scale_fill_viridis_d() +
+  ylab("Proportion")  +xlab("Year")+
+  ggtitle("Proportion Subscribed to Term Deposit by Year")+ theme(axis.text.x = element_text(angle=90, hjust=1))
+# Well this seems important.Slightly higher for 2010. There is a lot of missing values (unknowns) in 2008. This was also the financial crisis. We see lot of  yes and no for 2010 are  can be considered a great dataset for prediction. We will use 2008 and 2009 to understand the data but the data seems to be more clean and normal in 2010.
+
+# Break down months by year
+#Year=2008
+Bank_Full %>% 
+  filter(year == 2008) %>%
+  ggplot(aes(x=month, fill=y)) + 
+  geom_bar(position="fill") + 
+  scale_fill_viridis_d() +
+  ylab("Proportion") +xlab("2008")+
+  ggtitle("Proportion Subscribed to Term Deposit-2008 Month")+ theme(axis.text.x = element_text(angle=90, hjust=1))
+#Oct month shows higher on the Yes side
+
+#Year=2009
+Bank_Full %>% 
+  filter(year == 2009) %>%
+  ggplot(aes(x=month, fill=y)) + 
+  geom_bar(position="fill") + 
+  scale_fill_viridis_d() +
+  ylab("Proportion") +xlab("2009")+
+  ggtitle("Proportion Subscribed to Term Deposit-2009 Month")+ theme(axis.text.x = element_text(angle=90, hjust=1))
+#Higher from Oct until dec
+
+#Year=2010
+Bank_Full %>% 
+  filter(year == 2010) %>%
+  ggplot(aes(x=month, fill=y)) + 
+  geom_bar(position="fill") + 
+  scale_fill_viridis_d() +
+  ylab("Proportion") +xlab("2010")+
+  ggtitle("Proportion Subscribed to Term Deposit-2010 Month")+ theme(axis.text.x = element_text(angle=90, hjust=1))
+#Year 2010 seema to have had more cleints with term deposits than year 2008 and 2009. The yes and no are almost equal.The 2010 data looks better for prediction compared to 2008 and 2009.
+#The Yes on term deposit seems to be  increasing with year.
+```
+```{r Plots}
+# continuous variables
+# Age vs Response
+t(aggregate(age~y,data=Bank_Full,summary))
+Bank_Full %>%
+  ggplot(aes(x=y, y=age, color=y)) +
+  geom_boxplot() +
+  scale_fill_viridis_d() +
+  ggtitle("Term Deposit vs Age") +
+  xlab("Term Deposit")
+# clients between age 35 to 50 seems to be more likely to open a term deposit
+
+# Balance vs Response
+t(aggregate(balance~y,data=Bank_Full,summary))
+Bank_Full %>%
+  ggplot(aes(x=y, y=balance, color=y)) +
+  geom_boxplot() +
+  scale_fill_viridis_d() +
+  ggtitle("Term Deposit vs Balance") +
+  xlab("Term Deposit")+scale_y_log10()
+# looks like it could benefit from a transformation
+# The clients with more balance seems to be having a term deposit Yes. There seems to be a leverage point on Nos.The clients who opened a term deposit had a more balance than the ones who did not have a term deposit
+
+# Day vs Response (not sure this is the best way to look at this)
+Bank_Full %>%
+  ggplot(aes(x=y, y=day, color=y)) +
+  geom_boxplot() +
+  scale_fill_viridis_d() +
+  ggtitle("Term Deposit vs Day") +
+  xlab("Term Deposit")
+#Last Day contacted of the month seems to be almost same for those who had a opened term deposit or not.
+
+# Probably better to do this:
+Bank_Full %>% 
+  ggplot(aes(x=day, fill=y)) + 
+  geom_bar(position="fill") + 
+  scale_fill_viridis_d() +
+  ylab("Proportion") +
+  ggtitle("Proportion Subscribed to Term Deposit by Day")
+# maybe more likely on days 1, 10, 22, 30? Maybe something to do with paydays
+
+# Duration vs Response
+Bank_Full %>%
+  ggplot(aes(x=y, y=duration, color=y)) +
+  geom_boxplot() +
+  scale_fill_viridis_d() +
+  ggtitle("Term Deposit vs Duration") +
+  xlab("Term Deposit")+scale_y_log10()
+# Definitely a difference there - yes tends to have a longer duration
+# might want to look at that outlier in the high 4000s of duration
+
+# Campaign vs Response
+Bank_Full %>%
+  ggplot(aes(x=y, y=campaign, color=y)) +
+  geom_boxplot() +
+  scale_fill_viridis_d() +
+  ggtitle("Term Deposit vs Campaign") +
+  xlab("Term Deposit")+scale_y_log10()
+# The number of contacts performed during this campaign days is almost the same as for having term deposit and not having a term deposit 
+# There might be a cut-off above which there are only No's (like >35 or 40)
+
+# Pdays vs Response (NOTE the meaning of -1)
+Bank_Full %>%
+  ggplot(aes(x=y, y=pdays, color=y)) +
+  geom_boxplot() +
+  scale_fill_viridis_d() +
+  ggtitle("Term Deposit vs Pdays") +
+  xlab("Term Deposit")
+# let's see what this looks like when we take out the -1:
+#The number of days that passed by after the client was last contacted from a previous campaign had more yes than nos.
+Bank_Full %>%
+  filter(pdays != -1) %>%
+  ggplot(aes(x=y, y=pdays, color=y)) +
+  geom_boxplot() +
+  scale_fill_viridis_d() +
+  ggtitle("Term Deposit vs Pdays - Previously contacted") +
+  xlab("Term Deposit")
+# So for those previously contacted: less days are associated with more yes in response
+# let's look at those not previously contacted:
+
+Bank_Full %>%
+  filter(pdays == -1) %>%
+  ggplot(aes(x=y, fill=y)) +
+  geom_bar() +
+  scale_fill_viridis_d() +
+  ggtitle("Term Deposit vs Pdays - Not Previously Contacted") +
+  xlab("Term Deposit")
+# look at count for not previously contacted. They are more than for no s than the yes s.
+
+#Bank_Full %>%  filter(pdays == -1) %>%  count(y)
+# no:33570, yes:3384 (1/9 are yes)
+# look at count for previously contacted
+
+#Bank_Full %>%  filter(pdays != -1) %>%  count(y)
+# No:6352, yes:1905 (1/3 are yes)
+# that's a big difference
+
+# Previous vs Response
+Bank_Full %>%
+  ggplot(aes(x=y, y=previous, color=y)) +
+  geom_boxplot() +
+  scale_fill_viridis_d() +
+  ggtitle("Term Deposit vs Previous") +
+  xlab("Term Deposit")+scale_y_log10()
+#The number of contacts performed before this campaign and for this client shows on an average the same for yes and no for having a term deposit.# outlier over 250
+# let's look at it w/o
+
+Bank_Full %>%
+  filter(previous < 100) %>%
+  ggplot(aes(x=y, y=previous, color=y)) +
+  geom_boxplot() +
+  scale_fill_viridis_d() +
+  ggtitle("Term Deposit vs Previous") +
+  xlab("Term Deposit")+scale_y_log10()
+# hard to visualize. in the table, the mean for yes is higher though.
+```
+```{r Interactions}
+# paired scatterplots coded by response: AGE
+# (looking for possible interactions)
+# Age vs Balance
+Bank_Full %>%
+  ggplot(aes(x=age, y=balance, color=y)) +
+  geom_point()+
+#+scale_y_log10()+scale_x_log10()
+  scale_color_viridis_d() +
+  ggtitle("Age vs Balance by Response")
+#Looks like they are linearly correlated to each other. We also see few outlier that are high leverage points for no (2 observations) and yes (1 observation).This could be a valid interaction as age and balance are linearly correlated.
+
+# Age vs Day
+Bank_Full %>%
+  ggplot(aes(x=age, y=day, color=y)) +
+  geom_point(position="jitter") +
+  scale_color_viridis_d() +
+  ggtitle("Age vs Day by Response")
+#Age and last contact day of the month dont seem to be valid interactions
+
+# Age vs Duration
+Bank_Full %>%
+  ggplot(aes(x=age, y=duration, color=y)) +
+  geom_point(position="jitter") +
+  scale_color_viridis_d() +
+  ggtitle("Age vs Duration by Response")
+#Age and last contact duration dont seem to be valid interactions
+
+# Age vs Campaign
+Bank_Full %>%
+  ggplot(aes(x=age, y=campaign, color=y)) +
+  geom_point(position="jitter") +
+  scale_color_viridis_d() +
+  ggtitle("Age vs Campaign by Response")
+# There's a cut-off around 60 where people are no longer contacted by the campaign a ton of times.Age and campaign could play an import role in identifying the right candidate eligible for a term deposit.
+
+# Age vs Pdays
+Bank_Full %>%
+  ggplot(aes(x=age, y=pdays, color=y)) +
+  geom_point(position="jitter") +
+  scale_color_viridis_d() +
+  ggtitle("Age vs Pdays by Response")
+#Age and number of contacts performed during this campaign could be correlated and eligible for an interaction.
+
+# Age vs Previous
+Bank_Full %>%
+  ggplot(aes(x=age, y=previous, color=y)) +
+  geom_point(position="jitter") +
+  scale_color_viridis_d() +
+  ggtitle("Age vs Previous by Response")
+# note the outlier: previous = 275.  Next closest is 58.
+#Age and number of contacts performed before this campaign could be potential for interactions.
+
+# paired scatterplots coded by response: BALANCE
+# (looking for possible interactions)
+# Balance vs Day
+Bank_Full %>%
+  ggplot(aes(x=balance, y=day, color=y)) +
+  geom_point(position="jitter") +
+  scale_color_viridis_d() +
+  ggtitle("Day vs Balance by Response")
+#Balance and last contact of the month could be potential for interaction.
+
+# Balance vs Duration
+Bank_Full %>%
+  ggplot(aes(x=balance, y=duration, color=y)) +
+  geom_point(position="jitter") +
+  scale_color_viridis_d() +
+  ggtitle("Balance vs Duration by Response")
+#Balance vs last contact duration dont se to be potential for interactionsS
+
+# Balance vs Campaign
+Bank_Full %>%
+  ggplot(aes(x=balance, y=campaign, color=y)) +
+  geom_point(position="jitter") +
+  scale_color_viridis_d() +
+  ggtitle("Balance vs Campaign by Response")
+# As noted previously, there aren't any Yes's above a certain # in campaign
+
+# Balance vs Pdays
+Bank_Full %>%
+  ggplot(aes(x=balance, y=pdays, color=y)) +
+  geom_point(position="jitter") +
+  scale_color_viridis_d() +
+  ggtitle("Balance vs Pdays by Response")
+# note the outlier.Not potential for interactionsS
+
+# Balance vs Previous
+Bank_Full %>%
+  ggplot(aes(x=balance, y=previous, color=y)) +
+  geom_point(position="jitter") +
+  scale_color_viridis_d() +
+  ggtitle("Balance vs Previous by Response")
+# note the outlier: previous = 275.  Next closest is 58.
+
+# paired scatterplots coded by response: DURATION
+# (looking for possible interactions)
+# Duration vs Day
+Bank_Full %>%
+  ggplot(aes(x=duration, y=day, color=y)) +
+  geom_point(position="jitter") +
+  scale_color_viridis_d() +
+  ggtitle("Duration vs Day by Response")
+# note the outlier:
+
+# Duration vs Campaign
+Bank_Full %>%
+  ggplot(aes(x=duration, y=campaign, color=y)) +
+  geom_point(position="jitter") +
+ scale_color_viridis_d() +
+  ggtitle("Duration vs Campaign by Response")
+#Last contact duration and campain contacts dont seem to have an interaction.There are 1 outliers on Duration and 2 on campaign
+
+# Duration vs Pdays
+Bank_Full %>%
+  ggplot(aes(x=duration, y=pdays, color=y)) +
+  geom_point(position="jitter") +
+  scale_color_viridis_d() +
+  ggtitle("Duration vs Pdays by Response")
+#Last contacted duration and pdays passed after client was last contacted could have an interaction.
+
+# Duration vs Previous
+Bank_Full %>%
+  ggplot(aes(x=duration, y=previous, color=y)) +
+  geom_point(position="jitter") +
+  scale_color_viridis_d() +
+  ggtitle("Duration vs Previous by Response")
+# note the outlier: previous = 275.  Next closest is 58.
+
+# paired scatterplots coded by response: Campaign
+# (looking for possible interactions)
+# Campaign vs Balance
+Bank_Full %>%
+  ggplot(aes(x=campaign, y=balance, color=y)) +
+  geom_point(position="jitter") +
+  scale_color_viridis_d() +
+  ggtitle("Campaign vs Balance by Response")
+#Look at the outlier
+
+# Campaign vs Day
+Bank_Full %>%
+  ggplot(aes(x=campaign, y=day, color=y)) +
+  geom_point(position="jitter") +
+  scale_color_viridis_d() +
+  ggtitle("Campaign vs Day by Response")
+
+# Campaign vs Duration
+Bank_Full %>%
+  ggplot(aes(x=campaign, y=duration, color=y)) +
+  geom_point(position="jitter") +
+  scale_color_viridis_d() +
+  ggtitle("Campaign vs Duration by Response")
+
+# Age vs Campaign
+Bank_Full %>%
+  ggplot(aes(x=age, y=campaign, color=y)) +
+  geom_point(position="jitter") +
+  scale_color_viridis_d() +
+  ggtitle("Age vs Campaign by Response")
+# There's a cut-off around 60 where people are no longer contacted by the campaign a ton of times.
+
+# Campaign vs Pdays
+Bank_Full %>%
+  ggplot(aes(x=campaign, y=pdays, color=y)) +
+  geom_point(position="jitter") +
+  scale_color_viridis_d() +
+  ggtitle("Campaign vs Pdays by Response")
+
+# Campaign vs Previous
+Bank_Full %>%
+  ggplot(aes(x=campaign, y=previous, color=y)) +
+  geom_point(position="jitter") +
+  scale_color_viridis_d() +
+  ggtitle("Campaign vs Previous by Response")
+# So the people who were contacted a ton of times by this campaign were all people who had not been previously contacted before
+
+# paired scatterplots coded by response: PDAYS
+# (looking for possible interactions)
+# Pdays vs Balance
+Bank_Full %>%
+  ggplot(aes(x=pdays, y=balance, color=y)) +
+  geom_point(position="jitter") +
+  scale_color_viridis_d() +
+  ggtitle("Pdays vs Balance by Response")
+
+# Pdays vs Day
+Bank_Full %>%
+  ggplot(aes(x=pdays, y=day, color=y)) +
+  geom_point(position="jitter") +
+  scale_color_viridis_d() +
+  ggtitle("Pdays vs Day by Response")
+
+# Pdays vs Duration
+Bank_Full %>%
+  ggplot(aes(x=pdays, y=duration, color=y)) +
+  geom_point(position="jitter") +
+  scale_color_viridis_d() +
+  ggtitle("Pdays vs Duration by Response")
+
+# Pdays vs Campaign
+Bank_Full %>%
+  ggplot(aes(x=pdays, y=campaign, color=y)) +
+  geom_point(position="jitter") +
+  scale_color_viridis_d() +
+  ggtitle("Pdays vs Campaign by Response")
+
+# Age vs Pdays
+Bank_Full %>%
+  ggplot(aes(x=age, y=pdays, color=y)) +
+  geom_point(position="jitter") +
+  scale_color_viridis_d() +
+  ggtitle("Age vs Pdays by Response")
+
+# Pdays vs Previous
+Bank_Full %>%
+  ggplot(aes(x=pdays, y=previous, color=y)) +
+  geom_point(position="jitter") +
+  scale_color_viridis_d() +
+  ggtitle("Pdays vs Previous by Response")
+# note the outlier: previous = 275.  Next closest is 58.
+
+# paired scatterplots coded by response: PREVIOUS
+# (looking for possible interactions)
+# Previous vs Balance
+Bank_Full %>%
+  ggplot(aes(x=previous, y=balance, color=y)) +
+  geom_point(position="jitter") +
+  scale_color_viridis_d() +
+  ggtitle("Previous vs Balance by Response")
+#There is the outlier.
+
+# Previous vs Day
+Bank_Full %>%
+  ggplot(aes(x=previous, y=day, color=y)) +
+  geom_point(position="jitter") +
+  scale_color_viridis_d() +
+  ggtitle("Previous vs Day by Response")
+#The outlier is seen
+
+# Previous vs Duration
+Bank_Full %>%
+  ggplot(aes(x=previous, y=duration, color=y)) +
+  geom_point(position="jitter") +
+  scale_color_viridis_d() +
+  ggtitle("Previous vs Duration by Response")
+#The outlier is seen
+
+# Previous vs Campaign
+Bank_Full %>%
+  ggplot(aes(x=previous, y=campaign, color=y)) +
+  geom_point(position="jitter") +
+  scale_color_viridis_d() +
+  ggtitle("Previous vs Campaign by Response")
+#The outlier is seen
+
+# Age vs Previous
+Bank_Full %>%
+  ggplot(aes(x=age, y=previous, color=y)) +
+  geom_point(position="jitter") +
+  scale_color_viridis_d() +
+  ggtitle("Age vs Previous by Response")
+# note the outlier: previous = 275.  Next closest is 58.
+
+# Pdays vs Previous
+Bank_Full %>%
+  ggplot(aes(x=pdays, y=previous, color=y)) +
+  geom_point(position="jitter") +
+  scale_color_viridis_d() +
+  ggtitle("Pdays vs Previous by Response")
+# note the outlier: previous = 275.  Next closest is 58.
+```
+
+```{r cor relation}
+# Correlations between continuous variable
+# Exploring multicollinearity
+pairs(Bank_Full[,c(1,6,10,12,13,14,15)])
+my.cor<-cor(Bank_Full[,c(1,6,10,12,13,14,15)])
+my.cor
+#pairs(Bank_Full[,c(1,6,10,12,13,14,15)],col=Bank_Full$y)
+# Heatmap
+heatmap.2(my.cor,col=redgreen(75), 
+          density.info="none", trace="none", dendrogram=c("row"), 
+          symm=F,symkey=T,symbreaks=T, scale="none")
+
+corr <- Bank_Full %>% dplyr::select(age,balance,day,duration,campaign,pdays,previous) 
+corr <- round(cor(corr), 2)
+ggcorrplot(corr,  type = "lower",
+           lab = TRUE, lab_size = 3, method = "circle",
+           colors = c("tomato2", "white", "springgreen3"),
+           title = "Correlations of all relevant variables",
+           ggtheme = theme_bw())
+# previous and pdays correlation = 0.45. Will also be correlated with the dummy variable we build
+
+# multicollinearity w/ categorical speculation
+# Hyp: older people would be more likely to have landline
+#plot(Bank_Full$age~Bank_Full$contact,col=c("red","blue"))
+# Yes, but there's overlap
+# Hyp: balance and education 
+#plot(Bank_Full$balance~Bank_Full$education,col=c("red","blue"))
+#plot(log(Bank_Full$balance)~Bank_Full$education,col=c("red","blue"))
+# note I know there's zeros, just looking 
+# slight but not dramatic
+# age and marital
+#plot(Bank_Full$age~Bank_Full$marital,col=c("red","blue"))
+# single people tend to be younger, as you'd expect
+# housing and loan
+#plot(Bank_Full$housing~Bank_Full$loan,col=c("red","blue")) # similar ratios
+```
+
+```{r Vifs}
+#model.main<-glm(age~., data=Bank_Full)
+#vif(model.main)
+#Using this tool, GVIF is the same as VIF for continuous predictors only
+#For categorical predictors, the value GVIG^(1/(2*df)) should be squared and interpreted
+#as a usual vif type metric.The following code can be used to interpret VIFs like we 
+#discussed in class.
+#(vif(model.main)[,3])^2
+#VIF look good.Nothing seems to be greater than 10
+```
+
+``````{r normality}
+# Normality will be a concern for LDA/QDA:
+hist(Bank_Full$age) #fine
+hist(Bank_Full$balance) #skew
+range(Bank_Full$balance) # This is skewed but has negative numbers
+hist(Bank_Full$duration) #skew
+range(Bank_Full$duration) # There are 3 zeros...
+hist(Bank_Full$campaign)#skew
+range(Bank_Full$campaign) # 1-3
+hist(log(Bank_Full$campaign)) # still doesn't look great
+hist(Bank_Full$pdays) #skewed, but there's negative -1's that we will likely change to 0
+hist(Bank_Full$previous)
+range(Bank_Full$previous) #0-275 (but next lowest is 58)
+Bank_Full %>%
+  filter(previous <60) %>%
+  ggplot(aes(x=previous)) +
+  geom_histogram()
+``````
+```{r outliers}
+# look at the identified possible outliers
+# Duration
+summary(Bank_Full$duration)
+Bank_Full %>% 
+  filter(Bank_Full$duration == 4918)
+# 4918 is max (response is no), next value following it is 3881
+# 4918/60 = 81.9 minutes. 3881/60 = 64.68 minutes. Median = 3 min, Mean = 4.3 min, 3rd Q = 5.31 min
+# Can we justify throwing this out by saying 81.9 minutes is not a good use of time? That's 19 average phone calls...
+# Also this is Nov 2008. Depending on what we do, it may be a non-issue
+# Previous
+summary(Bank_Full$previous)
+# Might make more sense to look at it w/o the 0s:
+Bank_Full %>%
+  filter(previous >0) %>%
+  summarise(mean = mean(previous), 
+            median = median(previous), 
+            min = min(previous),
+            max = max(previous),
+            quantile = quantile(previous))
+# 275 (response is no), next value is 58 
+Bank_Full %>%
+  filter(Bank_Full$previous == 275)
+# I suppose we could say that we don't have enough data in this date range to be useful
+# So we can restrict the range down to <100 or something.
+# Removing the 2 outliers:
+# double checking my work
+nrow(Bank_Full) # 45211
+Bank_Full = subset(Bank_Full, duration != 4918)
+nrow(Bank_Full) #45210
+Bank_Full = subset(Bank_Full, previous != 275)
+nrow(Bank_Full) #45209
+```
+
+```{r PCA}
+#PCA as part of the EDA
+# Continuous predictors
+#For the 3 Years (2008,2009,2010)
+# This includes: age, balance, day, duration, campaign, pdays, previous
+str(Bank_Full)
+reduced<-Bank_Full[,c(1,6,10,12,13,14,15)]
+pairs(reduced)
+#Let's take a quick look at the summary statistics and in particular lets calculate the variance of each variable and add them up to obtain the total variance.
+apply(reduced,2,summary)
+var.raw<-apply(reduced,2,var)
+var.raw
+#Total variance
+sum(var.raw)
+
+#Running PCA is relatively straight forward.  The following script conducts a PCA using the covariance matrix (nonstandardarized #variables) and stores the results in an object.  This object contains the eigenvectors, eigenvalue, and the new principle #component vectors.  Lets start by producing a correlation matrix to verify that new principle component variables are #uncorrelated.
+pc.result<-prcomp(Bank_Full[,c(1,6,10,12,13,14,15)],scale.=TRUE)
+pc.scores<-pc.result$x
+pairs(pc.scores)
+cor(pc.scores)
+
+#We can again verify that the total variance in the new PC variables is exactly the same as the original data.  The eigenvectors are stored inside of "pc.result" as well in the "rotation" object.
+var.pca<-apply(pc.scores,2,var)
+var.pca
+#Total Variance of PC's
+sum(var.pca)
+#Total Variance of Original Variables.
+sum(var.raw)
+#List of eigenvectors
+pc.result$rotation
+
+#A scree plot of the eigenvalues used to determine how many pc's to keep can be plotted in the following way:
+par(mfrow=c(1,2))
+eigenvals<-(pc.result$sdev)^2
+plot(1:7,eigenvals/sum(eigenvals),type="l",main="Scree Plot",ylab="Prop. Var. Explained")
+cumulative.prop<-cumsum(eigenvals/sum(eigenvals))
+plot(1:7,cumulative.prop,type="l",main="Cumulative proportion",ylim=c(0,1))
+par(mfrow=c(1,1))
+#The scree plots show the elbow around 2.The variance explained for .9 is 6. 
+#Use ggplot2 to plot the first few pc's
+pc.scores<-data.frame(pc.scores)
+pc.scores$y<-Bank_Full$y
+ggplot(data = pc.scores, aes(x = PC1, y = PC2)) +
+  geom_point(aes(col=y), size=1)+
+  ggtitle("PCA of Bank_Full")
+
+#Looking at PC1 and PC3
+pc.scores<-data.frame(pc.scores)
+pc.scores$y<-Bank_Full$y
+ggplot(data = pc.scores, aes(x = PC1, y = PC3)) +
+  geom_point(aes(col=y), size=1)+
+  ggtitle("PCA of Bank_Full")
+# Not great.  Some separation.  Still debating using day in there.
+# PCA w/o day:
+# This includes: age, balance, duration, campaign, pdays, previous
+# We might want to do this again when we address normality for LDA/QDA.
+# Not necessary for PCA but slides indicate it may improve the results.
+# PCA without day and pdays
+reduced<-Bank_Full[,c(1,6,12,13,15)]
+pairs(reduced)
+apply(reduced,2,summary)
+var.raw<-apply(reduced,2,var)
+var.raw
+#Total variance
+sum(var.raw)
+pc.result<-prcomp(Bank_Full[,c(1,6,12,13,15)],scale.=TRUE)
+pc.scores<-pc.result$x
+pairs(pc.scores)
+cor(pc.scores)
+var.pca<-apply(pc.scores,2,var)
+var.pca
+#Total Variance of PC's
+sum(var.pca)
+#Total Variance of Original Variables.
+sum(var.raw)
+#List of eigenvectors
+pc.result$rotation
+
+#A scree plot of the eigenvalues used to determine how many pc's to keep can be plotted in the following way:
+par(mfrow=c(1,2))
+eigenvals<-(pc.result$sdev)^2
+plot(1:5,eigenvals/sum(eigenvals),type="l",main="Scree Plot",ylab="Prop. Var. Explained")
+cumulative.prop<-cumsum(eigenvals/sum(eigenvals))
+plot(1:5,cumulative.prop,type="l",main="Cumulative proportion",ylim=c(0,1))
+par(mfrow=c(1,1))
+#Removing day and pdays The scree plots show the elbow around 4 predictors.The variance explained for 80 of the variance is 4. 
+#Use ggplot2 to plot the first few pc's
+pc.scores<-data.frame(pc.scores)
+pc.scores$y<-Bank_Full$y
+ggplot(data = pc.scores, aes(x = PC1, y = PC2)) +
+  geom_point(aes(col=y), size=1)+
+  ggtitle("PCA of Bank_Full")
+
+#Looking at PC1 and PC3
+pc.scores<-data.frame(pc.scores)
+pc.scores$y<-Bank_Full$y
+ggplot(data = pc.scores, aes(x = PC1, y = PC3)) +
+  geom_point(aes(col=y), size=1)+
+  ggtitle("PCA of Bank_Full")
+#Without day and pday we find that the model requires first 4 principle components or combinations of these to explain about 80% of the variability.
+
+#Removing year 2008
+# Explore what the data looks like if we remove 2008
+prop.table(table(Bank_Full$y,Bank_Full$year),2)
+#plot(Bank_Full$y~Bank_Full$year,col=c("red","blue"))
+Bank_Full.2008 = Bank_Full %>%
+  filter(year != 2008)
+summary(Bank_Full.2008)
+# 17481 rows.  13593 no to 3888 yes. (3.5:1)  Much less unbalanced.
+#For the 3 Years
+# This includes: age, balance, day, duration, campaign, pdays, previous
+reduced<-Bank_Full.2008[,c(1,6,10,12,13,14,15)]
+pairs(reduced)
+#Let's take a quick look at the summary statistics and in particular lets calculate the variance of each variable and add them up #to obtain the total variance.
+apply(reduced,2,summary)
+var.raw<-apply(reduced,2,var)
+var.raw
+#Total variance
+sum(var.raw)
+
+#Running PCA is relatively straight forward.  The following script conducts a PCA using the covariance matrix (nonstandardarized #variables) and stores the results in an object.  This object contains the eigenvectors, eigenvalue, and the new principle #component vectors.  Lets start by producing a correlation matrix to verify that new principle component variables are #uncorrelated.
+pc.result<-prcomp(Bank_Full.2008[,c(1,6,10,12,13,14,15)],scale.=TRUE)
+pc.scores<-pc.result$x
+pairs(pc.scores)
+cor(pc.scores)
+
+#We can again verify that the total variance in the new PC variables is exactly the same as the original data.  The eigenvectors are stored inside of "pc.result" as well in the "rotation" object.
+var.pca<-apply(pc.scores,2,var)
+var.pca
+#Total Variance of PC's
+sum(var.pca)
+#Total Variance of Original Variables.
+sum(var.raw)
+#List of eigenvectors
+pc.result$rotation
+
+#A scree plot of the eigenvalues used to determine how many pc's to keep can be plotted in the following way:
+par(mfrow=c(1,2))
+eigenvals<-(pc.result$sdev)^2
+plot(1:7,eigenvals/sum(eigenvals),type="l",main="Scree Plot",ylab="Prop. Var. Explained")
+cumulative.prop<-cumsum(eigenvals/sum(eigenvals))
+plot(1:7,cumulative.prop,type="l",main="Cumulative proportion",ylim=c(0,1))
+par(mfrow=c(1,1))
+#The scree plots show the elbow around 5-6.The variance explained for .8 is 5. 
+#Use ggplot2 to plot the first few pc's
+pc.scores<-data.frame(pc.scores)
+pc.scores$y<-Bank_Full.2008$y
+ggplot(data = pc.scores, aes(x = PC1, y = PC2)) +
+  geom_point(aes(col=y), size=1)+
+  ggtitle("PCA of Bank_Full")
+
+#Looking at PC1 and PC3
+pc.scores<-data.frame(pc.scores)
+pc.scores$y<-Bank_Full.2008$y
+ggplot(data = pc.scores, aes(x = PC1, y = PC3)) +
+  geom_point(aes(col=y), size=1)+
+  ggtitle("PCA of Bank_Full")
+# Not great.  Some separation.  Still debating using day in there.
+# PCA w/o day & pday:
+# This includes: age, balance, duration, campaign, pdays, previous
+# We might want to do this again when we address normality for LDA/QDA.
+# Not necessary for PCA but slides indicate it may improve the results.
+# Without day and pdays
+reduced<-Bank_Full.2008[,c(1,6,12,13,15)]
+pairs(reduced)
+apply(reduced,2,summary)
+var.raw<-apply(reduced,2,var)
+var.raw
+#Total variance
+sum(var.raw)
+pc.result<-prcomp(Bank_Full.2008[,c(1,6,12,13,15)],scale.=TRUE)
+pc.scores<-pc.result$x
+pairs(pc.scores)
+cor(pc.scores)
+var.pca<-apply(pc.scores,2,var)
+var.pca
+#Total Variance of PC's
+sum(var.pca)
+#Total Variance of Original Variables.
+sum(var.raw)
+#List of eigenvectors
+pc.result$rotation
+
+#A scree plot of the eigenvalues used to determine how many pc's to keep can be plotted in the following way:
+par(mfrow=c(1,2))
+eigenvals<-(pc.result$sdev)^2
+plot(1:5,eigenvals/sum(eigenvals),type="l",main="Scree Plot",ylab="Prop. Var. Explained")
+cumulative.prop<-cumsum(eigenvals/sum(eigenvals))
+plot(1:5,cumulative.prop,type="l",main="Cumulative proportion",ylim=c(0,1))
+par(mfrow=c(1,1))
+#Removing day and pdays The scree plots show the elbow around 4 predictors.The variance explained for 85 of the variance is 4. 
+#Use ggplot2 to plot the first few pc's
+pc.scores<-data.frame(pc.scores)
+pc.scores$y<-Bank_Full.2008$y
+ggplot(data = pc.scores, aes(x = PC1, y = PC2)) +
+  geom_point(aes(col=y), size=1)+
+  ggtitle("PCA of Bank_Full")
+
+#Looking at PC1 and PC3
+pc.scores<-data.frame(pc.scores)
+pc.scores$y<-Bank_Full.2008$y
+ggplot(data = pc.scores, aes(x = PC1, y = PC3)) +
+  geom_point(aes(col=y), size=1)+
+  ggtitle("PCA of Bank_Full")
+#Without day and pday we find that the model requires first 4 principle components or combinations of these to explain about 80% of the variability withot considering year 2008 data.
+#This looks better
+```
+
+```{r train test}
+# train test split
+#Using the data without 2008 as excluding it makes the dataset more balanced than when we have 2008 as we know that 2008 had financial crisis and because of which we see that the data is not good to include in prediction.
+# 80/20 would be: 13985:3496
+set.seed(1234)
+index<-sample(1:dim(Bank_Full)[1],3496,replace=F)
+test<-Bank_Full[index,]
+train<-Bank_Full[-index,]
+
+Bank_Full.2008$year = droplevels(Bank_Full.2008$year)
+
+set.seed(1235)
+index<-sample(1:dim(Bank_Full.2008)[1],3496,replace=F)
+test2008<-Bank_Full.2008[index,]
+train2008<-Bank_Full.2008[-index,]
+
+```
+
+```{r Model}
+# Using glm
+
+set.seed(1234)
+
+train<-na.omit(train)
+train2008<-na.omit(train2008)
+
+#With all Years
+Model_Full<-glm(as.factor(y) ~ age+job+marital+education+default+balance+housing+loan+contact+day+month+duration+campaign+pdays+previous+poutcome+year,data=train,family= binomial(link="logit"))
+(vif(Model_Full)[,3])^2
+#On letting all the predictors in the model and running the vif function, nothing stands out in terms of excluding the predictors from the model with a VIF score > 10
+
+#Summary of current fit
+summary(Model_Full)
+#Null deviance: 30188  on 41712  degrees of freedom
+#Residual deviance: 18477  on 41668  degrees of freedom
+#AIC: 18567
+#Call:
+#glm(formula = as.factor(y) ~ age + job + marital + education + 
+#    default + balance + housing + loan + contact + day + month + 
+#    duration + campaign + pdays + previous + poutcome + year, 
+#    family = binomial(link = "logit"), data = train)
+
+
+#Hosmer Lemeshow test for lack of fit.Use as needed.The g=10 is an option that deals with the continuous predictors if any are there.
+#This should be increased with caution. 
+hoslem.test(Model_Full$y, fitted(Model_Full), g=10)
+#p-value < 2.2e-16
+# rejects. But the sample size is large, so I don't think it's an issue
+
+# Using the summary coefficients we can generate CI for each one in the table showing odds ratio
+exp(cbind("Odds ratio" = coef(Model_Full), confint.default(Model_Full, level = 0.95)))
+
+#stepwise:
+#This starts with a null model and then builds up using forward selection up to all the predictors that were specified in main model previously.
+# Code from AutoClassify.R
+Model_Step<-Model_Full %>%stepAIC(trace=FALSE)
+summary(Model_Step)
+#Null deviance: 30188  on 41712  degrees of freedom
+#Residual deviance: 18480  on 41671  degrees of freedom
+#AIC: 18564
+#Call:
+#glm(formula = as.factor(y) ~ job + marital + education + balance + 
+#    housing + loan + contact + day + month + duration + campaign + 
+#    pdays + poutcome + year, family = binomial(link = "logit"), 
+#    data = train)
+(vif(Model_Step)[,3])^2
+
+hoslem.test(Model_Step$y, fitted(Model_Step), g=10)
+#p-value < 2.2e-16
+# rejects. But the sample size is large, so I don't think it's an issue
+exp(cbind("Odds ratio" = coef(Model_Step), confint.default(Model_Step, level = 0.95)))
+
+
+Model_Null<-glm(as.factor(y) ~ 1, data=train,family = binomial(link="logit"))
+#Forward:
+Model_FWD<-stepAIC(Model_Null,
+     scope = list(upper=Model_Full),
+     direction="forward",
+     test="Chisq",
+     data=train)
+summary(Model_FWD)
+#Null deviance: 30188  on 41712  degrees of freedom
+#Residual deviance: 18480  on 41671  degrees of freedom
+#AIC: 18564
+#Call:
+#glm(formula = as.factor(y) ~ duration + year + month + poutcome + 
+#    housing + day + education + marital + campaign + loan + job + 
+#    contact + pdays + balance, family = binomial(link = "logit"), 
+#    data = train)
+(vif(Model_FWD)[,3])^2
+hoslem.test(Model_FWD$y, fitted(Model_FWD), g=10)
+#p-value < 2.2e-16
+# rejects. But the sample size is large, so I don't think it's an issue
+exp(cbind("Odds ratio" = coef(Model_FWD), confint.default(Model_FWD, level = 0.95)))
+
+#Backward:
+Model_Bwd<-stepAIC(Model_Full,direction="backward",trace=FALSE)
+summary(Model_Bwd)
+#Null deviance: 30188  on 41712  degrees of freedom
+#Residual deviance: 18480  on 41671  degrees of freedom
+#AIC: 18564
+#Call:
+#glm(formula = as.factor(y) ~ job + marital + education + balance + 
+#    housing + loan + contact + day + month + duration + campaign + 
+#    pdays + poutcome + year, family = binomial(link = "logit"), 
+#    data = train)
+(vif(Model_Bwd)[,3])^2
+hoslem.test(Model_Bwd$y, fitted(Model_Bwd), g=10)
+#p-value < 2.2e-16
+# rejects. But the sample size is large, so I don't think it's an issue
+exp(cbind("Odds ratio" = coef(Model_Bwd), confint.default(Model_Bwd, level = 0.95)))
+
+#Both:
+Model_Both<-stepAIC(Model_Full,direction="both",trace=FALSE)
+summary(Model_Both)
+#Null deviance: 30188  on 41712  degrees of freedom
+#Residual deviance: 18480  on 41671  degrees of freedom
+#AIC: 18564
+#Call:
+#glm(formula = as.factor(y) ~ job + marital + education + balance + 
+#    housing + loan + contact + day + month + duration + campaign + 
+#    pdays + poutcome + year, family = binomial(link = "logit"), 
+#    data = train)
+(vif(Model_Both)[,3])^2
+hoslem.test(Model_Both$y, fitted(Model_Both), g=10)
+#p-value < 2.2e-16
+# rejects. But the sample size is large, so I don't think it's an issue
+exp(cbind("Odds ratio" = coef(Model_Both), confint.default(Model_Both, level = 0.95)))
+
+#Simple model : All predictors with no day and days
+Model_SIM1<-Model_Full<-glm(as.factor(y) ~ age+job+marital+education+balance+housing+loan+contact+month+duration+campaign+previous+poutcome+year,data=train,family= binomial(link="logit"))
+summary(Model_SIM1)
+#Null deviance: 30188  on 41712  degrees of freedom
+#Residual deviance: 18550  on 41671  degrees of freedom
+#AIC: 18634
+#Call:
+#glm(formula = as.factor(y) ~ age + job + marital + education + 
+#    balance + housing + loan + contact + month + duration + campaign + 
+#    previous + poutcome + year, family = binomial(link = "logit"), 
+#    data = train)
+(vif(Model_Full)[,3])^2
+hoslem.test(Model_SIM1$y, fitted(Model_SIM1), g=10)
+#p-value < 2.2e-16
+# rejects. But the sample size is large, so I don't think it's an issue
+
+#Simple model2 by hand seleting the predictors
+Model_SIM2<-glm(as.factor(y) ~ age+job+education+balance+loan+duration+campaign+previous+year,data=train,family= binomial(link="logit"))
+summary(Model_SIM2)
+#Null deviance: 30188  on 41712  degrees of freedom
+#Residual deviance: 20412  on 41690  degrees of freedom
+#AIC: 20458
+#Call:
+#glm(formula = as.factor(y) ~ age + job + education + balance + 
+#    loan + duration + campaign + previous + year, family = binomial(link = "logit"), 
+#    data = train)
+hoslem.test(Model_SIM1$y, fitted(Model_SIM2), g=10)
+#p-value < 2.2e-16
+# rejects. But the sample size is large, so I don't think it's an issue
+
+#With interactions:
+#Simple model2 by hand seleting the predictors
+Model_SIM3<-glm(as.factor(y) ~ age+job+education+balance+loan+duration+campaign+previous+year+year*month+year*day,data=train,family= binomial(link="logit"))
+summary(Model_SIM3)
+#Null deviance: 30188  on 41712  degrees of freedom
+#Residual deviance: 20386  on 41686  degrees of freedom
+#AIC: 20440
+#Call:
+#glm(formula = as.factor(y) ~ age + job + education + balance + 
+#    loan + duration + campaign + previous + year + year * month + 
+#    year * day, family = binomial(link = "logit"), data = train)
+hoslem.test(Model_SIM1$y, fitted(Model_SIM2), g=10)
+#p-value < 2.2e-16
+# rejects. But the sample size is large, so I don't think it's an issue
+
+#With interactions:
+#Simple model2 by hand seleting the predictors
+Model_SIM4<-glm(as.factor(y) ~ age+job+education+balance+loan+duration+campaign+pdays+previous+year+I(duration^2),I(pdays^2),data=train,family= binomial(link="logit"))
+summary(Model_SIM4)
+#Null deviance:  469874077  on 41712  degrees of freedom
+#Residual deviance: 8649774827  on 41688  degrees of freedom
+#AIC: 8649774877
+#Call:
+#glm(formula = as.factor(y) ~ age + job + education + balance + 
+#    loan + duration + campaign + pdays + previous + year + I(duration^2), 
+#    family = binomial(link = "logit"), data = train, weights = I(pdays^2))
+hoslem.test(Model_SIM1$y, fitted(Model_SIM2), g=10)
+#p-value < 2.2e-16
+# rejects. But the sample size is large, so I don't think it's an issue
+
+#LASSO
+#LASSO is obtained in the exact same way for logistic as is MLR.  The only difference is to let R know that our response is #categorical through the "family="binomial"" option.  Cross validation is used to obtain the optimal penalty value.  A final #refit using the entire data set can then be obtained once the optimal penalty value is determined.  For this example, the object #"finalmodel" produces the final lasso model
+dat.train.x <- model.matrix(y~age+job+marital+education+default+balance+housing+loan+contact+day+month+duration+campaign+pdays+previous+poutcome+year-1,train)
+dat.train.y<-train$y
+cvfit <- cv.glmnet(dat.train.x, dat.train.y, family = "binomial", type.measure = "class", nlambda = 1000)
+plot(cvfit)
+coef(cvfit, s = "lambda.min")
+#CV misclassification error rate is little below .1
+print("CV Error Rate:")
+cvfit$cvm[which(cvfit$lambda==cvfit$lambda.min)]
+
+#Optimal penalty
+print("Penalty Value:")
+cvfit$lambda.min
+
+#For final model predictions go ahead and refit lasso using entire
+#data set
+finalmodel<-glmnet(dat.train.x, dat.train.y, family = "binomial",lambda=cvfit$lambda.min)
+# print("CV Error Rate:")
+#[1] "CV Error Rate:"
+#> cvfit$cvm[which(cvfit$lambda==cvfit$lambda.min)]
+#[1] 0.09479059
+#> 
+#> #Optimal penalty
+#> print("Penalty Value:")
+#[1] "Penalty Value:"
+#> cvfit$lambda.min
+#[1] 0.0005113941
+```
+
+```{R Modelwno2008}
+
+set.seed(1234)
+
+#With all Years
+Model_Full_2008<-glm(as.factor(y) ~ age+job+marital+education+default+balance+housing+loan+contact+day+month+duration+campaign+pdays+previous+poutcome+year,data=train2008,family= binomial(link="logit"))
+(vif(Model_Full_2008)[,3])^2
+#On letting all the predictors in the model and running the vif function, nothing stands out in terms of excluding the predictors from the modle with a VIF score > 10
+
+#Summary of current fit
+summary(Model_Full_2008)
+#Null deviance: 14819  on 13984  degrees of freedom
+#Residual deviance: 10246  on 13941  degrees of freedom
+#AIC: 10334
+#Call:
+#glm(formula = as.factor(y) ~ age + job + marital + education + 
+#    default + balance + housing + loan + contact + day + month + 
+#    duration + campaign + pdays + previous + poutcome + year, 
+#    family = binomial(link = "logit"), data = train2008)
+
+#Hosmer Lemeshow test for lack of fit.  Use as needed.  The g=10 is an option that deals with the continuous predictors if any are there.
+#This should be increased with caution. 
+hoslem.test(Model_Full_2008$y, fitted(Model_Full_2008), g=10)
+#p-value < 2.2e-16
+# rejects. But the sample size is large, so I don't think it's an issue
+
+# Using the summary coefficients we can generate CI for each one in the table shwing odds ratio
+exp(cbind("Odds ratio" = coef(Model_Full_2008), confint.default(Model_Full_2008, level = 0.95)))
+
+#stepwise:
+#This starts with a null model and then builds up using forward selection up to all the predictors that were specified in main model previously.
+# Code from AutoClassify.R
+Model_Step_2008<-Model_Full_2008 %>%stepAIC(trace=FALSE)
+summary(Model_Step_2008)
+#Null deviance: 14784  on 13984  degrees of freedom
+#Residual deviance: 10221  on 13946  degrees of freedom
+#AIC: 10299
+#Call:
+#glm(formula = as.factor(y) ~ job + marital + education + housing + 
+#    loan + contact + day + month + duration + campaign + poutcome + 
+#    year, family = binomial(link = "logit"), data = train2008)
+(vif(Model_Step_2008)[,3])^2
+hoslem.test(Model_Step_2008$y, fitted(Model_Step_2008), g=10)
+#p-value < 2.2e-16
+# rejects. But the sample size is large, so I don't think it's an issue
+exp(cbind("Odds ratio" = coef(Model_Step_2008), confint.default(Model_Step_2008, level = 0.95)))
+
+Model_Null_2008<-glm(as.factor(y) ~ 1, data=train2008,family = binomial(link="logit"))
+#Forward:
+Model_FWD_2008<-stepAIC(Model_Full_2008,
+     scope = list(upper=Model_Full_2008),
+     direction="forward",
+     test="Chisq",
+     data=train2008)
+summary(Model_FWD_2008)
+#Null deviance: 14819  on 13984  degrees of freedom
+#Residual deviance: 10246  on 13941  degrees of freedom
+#AIC: 10334
+#Call:
+#glm(formula = as.factor(y) ~ age + job + marital + education + 
+#    default + balance + housing + loan + contact + day + month + 
+#    duration + campaign + pdays + previous + poutcome + year, 
+#    family = binomial(link = "logit"), data = train2008)
+(vif(Model_FWD_2008)[,3])^2
+hoslem.test(Model_FWD_2008$y, fitted(Model_FWD_2008), g=10)
+#p-value < 2.2e-16
+# rejects. But the sample size is large, so I don't think it's an issue
+exp(cbind("Odds ratio" = coef(Model_FWD_2008), confint.default(Model_FWD_2008, level = 0.95)))
+
+#Backward:
+Model_Bwd_2008<-stepAIC(Model_Full_2008,direction="backward",trace=FALSE)
+summary(Model_Bwd_2008)
+#Null deviance: 14819  on 13984  degrees of freedom
+#Residual deviance: 10249  on 13946  degrees of freedom
+#AIC: 10327
+#Call:
+#glm(formula = as.factor(y) ~ job + marital + education + housing + 
+#    loan + contact + day + month + duration + campaign + poutcome + 
+#    year, family = binomial(link = "logit"), data = train2008)
+(vif(Model_Bwd_2008)[,3])^2
+hoslem.test(Model_Bwd_2008$y, fitted(Model_Bwd_2008), g=10)
+#p-value < 2.2e-16
+# rejects. But the sample size is large, so I don't think it's an issue
+exp(cbind("Odds ratio" = coef(Model_Bwd_2008), confint.default(Model_Bwd_2008, level = 0.95)))
+
+#Both:
+Model_Both_2008<-stepAIC(Model_Full_2008,direction="both",trace=FALSE)
+summary(Model_Both_2008)
+#Null deviance: 14819  on 13984  degrees of freedom
+#Residual deviance: 10249  on 13946  degrees of freedom
+#AIC: 10327
+#Call:
+#glm(formula = as.factor(y) ~ job + marital + education + housing + 
+#    loan + contact + day + month + duration + campaign + poutcome + 
+#    year, family = binomial(link = "logit"), data = train2008)
+(vif(Model_Both_2008)[,3])^2
+hoslem.test(Model_Both_2008$y, fitted(Model_Both_2008), g=10)
+#p-value < 2.2e-16
+# rejects. But the sample size is large, so I don't think it's an issue
+exp(cbind("Odds ratio" = coef(Model_Both_2008), confint.default(Model_Both_2008, level = 0.95)))
+
+#Simple model : All predictors with no day and days
+Model_SIM1_2008<-glm(as.factor(y) ~ age+job+marital+education+balance+housing+loan+contact+month+duration+campaign+previous+poutcome+year,data=train2008,family= binomial(link="logit"))
+summary(Model_SIM1_2008)
+#Null deviance: 14819  on 13984  degrees of freedom
+#Residual deviance: 10305  on 13944  degrees of freedom
+#AIC: 10387
+#Call:
+#glm(formula = as.factor(y) ~ age + job + marital + education + 
+#    balance + housing + loan + contact + month + duration + campaign + 
+#    previous + poutcome + year, family = binomial(link = "logit"), 
+#    data = train2008)
+(vif(Model_SIM1_2008)[,3])^2
+hoslem.test(Model_SIM1_2008$y, fitted(Model_SIM1_2008), g=10)
+#p-value < 2.2e-16
+# rejects. But the sample size is large, so I don't think it's an issue
+
+#Simple model2 by hand selecting the predictors
+Model_SIM2_2008<-glm(as.factor(y) ~ age+job+education+balance+loan+duration+campaign+previous+year,data=train2008,family= binomial(link="logit"))
+summary(Model_SIM2_2008)
+#Null deviance: 14819  on 13984  degrees of freedom
+#Residual deviance: 11787  on 13963  degrees of freedom
+#AIC: 11831
+#Call:
+#glm(formula = as.factor(y) ~ age + job + education + balance + 
+#    loan + duration + campaign + previous + year, family = binomial(link = "logit"), 
+#    data = train2008)
+hoslem.test(Model_SIM2_2008$y, fitted(Model_SIM2_2008), g=10)
+#p-value < 2.2e-16
+# rejects. But the sample size is large, so I don't think it's an issue
+
+#With interactions:
+#Simple model2 by hand seleting the predictors
+Model_SIM3_2008<-glm(as.factor(y) ~ age+job+education+balance+loan+duration+campaign+previous+year+year*month+year*day,data=train2008,family= binomial(link="logit"))
+summary(Model_SIM3_2008)
+#Null deviance: 30188  on 41712  degrees of freedom
+#Residual deviance: 18378  on 41660  degrees of freedom
+#AIC: 18484
+#Call:
+#glm(formula = as.factor(y) ~ age + job + education + balance + 
+#    loan + duration + campaign + previous + year + year * month + 
+#    year * day, family = binomial(link = "logit"), data = train)
+hoslem.test(Model_SIM3_2008$y, fitted(Model_SIM3_2008), g=10)
+#p-value < 2.2e-16
+# rejects. But the sample size is large, so I don't think it's an issue
+
+#With interactions:
+#Simple model2 by hand seleting the predictors
+Model_SIM4_2008<-glm(as.factor(y) ~ age+job+education+balance+loan+duration+campaign+pdays+previous+year+I(duration^2),I(pdays^2),data=train2008,family= binomial(link="logit"))
+summary(Model_SIM4_2008)
+#Null deviance: 30188  on 41712  degrees of freedom
+#Residual deviance: 18378  on 41660  degrees of freedom
+#AIC: 18484
+#Call:
+#glm(formula = as.factor(y) ~ age + job + education + balance + 
+#    loan + duration + campaign + previous + year + year * month + 
+#    year * day, family = binomial(link = "logit"), data = train)
+hoslem.test(Model_SIM4_2008$y, fitted(Model_SIM4_2008), g=10)
+#p-value < 2.2e-16
+# rejects. But the sample size is large, so I don't think it's an issue
+
+#LASSO
+#LASSO is obtained in the exact same way for logistic as is MLR.  The only difference is to let R know that our response is categorical through the "family="binomial"" option.  Cross validation is used to obtain the optimal penalty value.  A final refit using the entire data set can then be obtained once the optimal penalty value is determined.  For this example, the object "final model" produces the final lasso model
+set.seed(1234)
+
+dat.train.x.2008 <- model.matrix(y~age+job+marital+education+default+balance+housing+loan+contact+day+month+duration+campaign+pdays+previous+poutcome+year-1,train2008)
+dat.train.y.2008<-train2008$y
+cvfit.2008 <- cv.glmnet(dat.train.x.2008, dat.train.y.2008, family = "binomial", type.measure = "class", nlambda = 1000)
+plot(cvfit.2008)
+coef(cvfit.2008, s = "lambda.min")
+#CV misclassification error rate is little below .1
+print("CV Error Rate:")
+cvfit.2008$cvm[which(cvfit.2008$lambda==cvfit.2008$lambda.min)]
+
+#Optimal penalty
+print("Penalty Value:")
+cvfit.2008$lambda.min
+
+#[1] "CV Error Rate:"
+#[1] 0.1708259
+#[1] "Penalty Value:"
+#[1] 0.002119464
+
+#For final model predictions go ahead and refit lasso using entire
+#data set
+finalmodel.2008<-glmnet(dat.train.x.2008, dat.train.y.2008, family = "binomial",lambda=cvfit.2008$lambda.min)
+```
+
+```{R Prediction}
+
+set.seed(1234)
+#For all years
+#Lets compare the stepwise and lasso models using the test set.However the true predictions from the models are predictive #probabalities.  To help get a handle on this, the following code makes predictions on the test set using the LASSO model.
+dat.test.x.2008<-model.matrix(y~age+job+marital+education+default+balance+housing+loan+contact+day+month+duration+campaign+pdays+previous+poutcome+year-1,test2008)
+dat.test.y.2008<-test2008$y
+fit.pred.lasso.2008 <- predict(finalmodel.2008, newx = dat.test.x.2008, type = "response")
+
+test2008$y[1:15]
+fit.pred.lasso.2008[1:15]
+
+#Making predictions for stepwise as well for later
+fit.pred.step.2008<-predict(Model_Step_2008,newdata=test2008,type="response")
+summary(fit.pred.step.2008)
+
+#Making predictions for backward as well for later
+fit.pred.bck.2008<-predict(Model_Bwd_2008,newdata=test2008,type="response")
+summary(fit.pred.bck.2008)
+
+#Making predictions for backward as well for later
+fit.pred.fwd.2008<-predict(Model_FWD_2008,newdata=test2008,type="response")
+summary(fit.pred.fwd.2008)
+
+#Making predictions for Both as well for later
+fit.pred.both.2008<-predict(Model_Both_2008,newdata=test2008,type="response")
+summary(fit.pred.both.2008)
+
+#Making predictions for SIM1 as well for later
+fit.pred.SIM1.2008<-predict(Model_SIM1_2008,newdata=test2008,type="response")
+summary(fit.pred.SIM1.2008)
+
+#Making predictions for SIM2 as well for later
+fit.pred.SIM2.2008<-predict(Model_SIM2_2008,newdata=test2008,type="response")
+summary(fit.pred.SIM2.2008)
+
+#Making predictions for SIM3 as well for later
+fit.pred.SIM3.2008<-predict(Model_SIM3_2008,newdata=test2008,type="response")
+summary(fit.pred.SIM3.2008)
+
+#Making predictions for SIM4 as well for later
+fit.pred.SIM4.2008<-predict(Model_SIM4_2008,newdata=test2008,type="response")
+summary(fit.pred.SIM4.2008)
+
+#Confusion Matrix
+#Lets use the predicted probablities to classify the observations and make a final confusion matrix for the two models.  We can use it to calculate error metrics.
+#Lets use a cutoff of 0.5 to make the classification.
+cutoff<-0.5
+class.lasso.2008<-factor(ifelse(fit.pred.lasso.2008>cutoff,"High","Low"),levels=c("Low","High"))
+class.step.2008<-factor(ifelse(fit.pred.step.2008>cutoff,"High","Low"),levels=c("Low","High"))
+class.bck.2008<-factor(ifelse(fit.pred.bck.2008>cutoff,"High","Low"),levels=c("Low","High"))
+class.fwd.2008<-factor(ifelse(fit.pred.fwd.2008>cutoff,"High","Low"),levels=c("Low","High"))
+class.both.2008<-factor(ifelse(fit.pred.both.2008>cutoff,"High","Low"),levels=c("Low","High"))
+class.SIM1.2008<-factor(ifelse(fit.pred.SIM1.2008>cutoff,"High","Low"),levels=c("Low","High"))
+class.SIM2.2008<-factor(ifelse(fit.pred.SIM1.2008>cutoff,"High","Low"),levels=c("Low","High"))
+class.SIM3.2008<-factor(ifelse(fit.pred.SIM1.2008>cutoff,"High","Low"),levels=c("Low","High"))
+class.SIM4.2008<-factor(ifelse(fit.pred.SIM1.2008>cutoff,"High","Low"),levels=c("Low","High"))
+
+#Confusion Matrix for Lasso
+conf.lasso.2008<-table(class.lasso.2008,test2008$y)
+print("Confusion matrix for LASSO")
+conf.lasso.2008
+#class.lasso.2008   no  yes
+#            Low  2539  444
+#            High  178  335
+
+#Confusion Matrix for Stepwise
+conf.step.2008<-table(class.step.2008,test2008$y)
+print("Confusion matrix for Stepwise")
+conf.step.2008
+#class.step.2008   no  yes
+#           Low  2534  426
+#           High  183  353
+
+#Confusion Matrix for Backward
+conf.bck.2008<-table(class.bck.2008,test2008$y)
+print("Confusion matrix for Backward")
+conf.bck.2008
+#class.bck.2008   no  yes
+#          Low  2534  426
+#          High  183  353
+
+#Confusion Matrix for Forward
+conf.fwd.2008<-table(class.fwd.2008,test2008$y)
+print("Confusion matrix for Forward")
+conf.fwd.2008
+#class.fwd.2008   no  yes
+#          Low  2531  425
+#          High  186  354
+
+#Confusion Matrix for Both
+conf.both.2008<-table(class.both.2008,test2008$y)
+print("Confusion matrix for Both")
+conf.both.2008
+#class.both.2008   no  yes
+#           Low  2534  426
+#           High  183  353
+
+#Accuracy
+print("Overall accuracy for LASSO")
+sum(diag(conf.lasso.2008))/sum(conf.lasso.2008)
+#0.8220824
+print("Overall accuracy for Step")
+sum(diag(conf.step.2008))/sum(conf.step.2008)
+#0.8258009
+print("Overall accuracy for Backward")
+sum(diag(conf.bck.2008))/sum(conf.bck.2008)
+#0.8258009
+print("Overall accuracy for Forward")
+#0.8252288
+sum(diag(conf.fwd.2008))/sum(conf.fwd.2008)
+print("Overall accuracy for Both")
+sum(diag(conf.both.2008))/sum(conf.both.2008)
+#0.8258009
+
+#Confusion Matrix
+#Lets use the predicted probablities to classify the observations and make a final confusion matrix for the two models.  We can use it to calculate error metrics.
+#Lets use a cutoff of 0.3 to make the classification.
+cutoff<-0.3
+class.lasso.2008<-factor(ifelse(fit.pred.lasso.2008>cutoff,"High","Low"),levels=c("Low","High"))
+class.step.2008<-factor(ifelse(fit.pred.step.2008>cutoff,"High","Low"),levels=c("Low","High"))
+class.bck.2008<-factor(ifelse(fit.pred.bck.2008>cutoff,"High","Low"),levels=c("Low","High"))
+class.fwd.2008<-factor(ifelse(fit.pred.fwd.2008>cutoff,"High","Low"),levels=c("Low","High"))
+class.both.2008<-factor(ifelse(fit.pred.both.2008>cutoff,"High","Low"),levels=c("Low","High"))
+class.SIM1.2008<-factor(ifelse(fit.pred.SIM1.2008>cutoff,"High","Low"),levels=c("Low","High"))
+class.SIM2.2008<-factor(ifelse(fit.pred.SIM1.2008>cutoff,"High","Low"),levels=c("Low","High"))
+class.SIM3.2008<-factor(ifelse(fit.pred.SIM1.2008>cutoff,"High","Low"),levels=c("Low","High"))
+class.SIM4.2008<-factor(ifelse(fit.pred.SIM1.2008>cutoff,"High","Low"),levels=c("Low","High"))
+
+#Confusion Matrix for Lasso
+conf.lasso.2008<-table(class.lasso.2008,test2008$y)
+print("Confusion matrix for LASSO")
+conf.lasso.2008
+#class.lasso.2008   no  yes
+#            Low  2352  258
+#            High  365  521
+
+#Confusion Matrix for Stepwise
+conf.step.2008<-table(class.step.2008,test2008$y)
+print("Confusion matrix for Stepwise")
+conf.step.2008
+#class.step.2008   no  yes
+#           Low  2340  249
+#           High  377  530
+
+#Confusion Matrix for Backward
+conf.bck.2008<-table(class.bck.2008,test2008$y)
+print("Confusion matrix for Backward")
+conf.bck.2008
+#class.bck.2008   no  yes
+#          Low  2340  249
+#          High  377  530
+
+#Confusion Matrix for Forward
+conf.fwd.2008<-table(class.fwd.2008,test2008$y)
+print("Confusion matrix for Forward")
+conf.fwd.2008
+#class.fwd.2008   no  yes
+#          Low  2341  249
+#          High  376  530
+
+#Confusion Matrix for Both
+conf.both.2008<-table(class.both.2008,test2008$y)
+print("Confusion matrix for Both")
+conf.both.2008
+#class.both.2008   no  yes
+#           Low  2340  249
+#           High  377  530
+
+#Accuracy
+print("Overall accuracy for LASSO")
+sum(diag(conf.lasso.2008))/sum(conf.lasso.2008)
+#0.8217963
+print("Overall accuracy for Step")
+sum(diag(conf.step.2008))/sum(conf.step.2008)
+#0.8209382
+print("Overall accuracy for Backward")
+sum(diag(conf.bck.2008))/sum(conf.bck.2008)
+#0.8209382
+print("Overall accuracy for Forward")
+#0.8212243
+sum(diag(conf.fwd.2008))/sum(conf.fwd.2008)
+print("Overall accuracy for Both")
+sum(diag(conf.both.2008))/sum(conf.both.2008)
+#0.8209382
+```
+
+```{R ROC}
+set.seed(1234)
+#ROC curves: LASSO model on test set
+pred1 <- prediction(fit.pred.lasso.2008[,1], dat.test.y.2008)
+roc.perf1 = performance(pred1, measure = "tpr", x.measure = "fpr")
+auc.val1 <- performance(pred1, measure = "auc")
+auc.val1 <- auc.val1@y.values
+plot(roc.perf1, colorize=TRUE)
+abline(a=0, b= 1)
+text(x = .40, y = .6,paste("AUC = ", round(auc.val1[[1]],3), sep = ""))
+# AUC=0.871
+
+# Code from HW 12
+#ROC curves: Step model on test set
+results.step<-prediction(fit.pred.step.2008, test2008$y,label.ordering=c("no","yes"))
+roc.step = performance(results.step, measure = "tpr", x.measure = "fpr")
+auc.val.step = performance(results.step, measure="auc")
+auc.val.step = auc.val.step@y.values
+plot(roc.step,colorize = TRUE)
+abline(a=0, b= 1)
+text(x = .40, y = .6,paste("AUC = ", round(auc.val.step[[1]],3), sep = ""))
+# AUC=0.875
+
+# Code from HW 12
+#ROC curves: Backward model on test set
+results.step<-prediction(fit.pred.bck.2008, test2008$y,label.ordering=c("no","yes"))
+roc.step = performance(results.step, measure = "tpr", x.measure = "fpr")
+auc.val.step = performance(results.step, measure="auc")
+auc.val.step = auc.val.step@y.values
+plot(roc.step,colorize = TRUE)
+abline(a=0, b= 1)
+text(x = .40, y = .6,paste("AUC = ", round(auc.val.step[[1]],3), sep = ""))
+# AUC=0.875
+
+# Code from HW 12
+#ROC curves: Forward model on test set
+results.step<-prediction(fit.pred.fwd.2008, test2008$y,label.ordering=c("no","yes"))
+roc.step = performance(results.step, measure = "tpr", x.measure = "fpr")
+auc.val.step = performance(results.step, measure="auc")
+auc.val.step = auc.val.step@y.values
+plot(roc.step,colorize = TRUE)
+abline(a=0, b= 1)
+text(x = .40, y = .6,paste("AUC = ", round(auc.val.step[[1]],3), sep = ""))
+# AUC=0.875
+
+# Code from HW 12
+#ROC curves: Both model on test set
+results.step<-prediction(fit.pred.both.2008, test2008$y,label.ordering=c("no","yes"))
+roc.step = performance(results.step, measure = "tpr", x.measure = "fpr")
+auc.val.step = performance(results.step, measure="auc")
+auc.val.step = auc.val.step@y.values
+plot(roc.step,colorize = TRUE)
+abline(a=0, b= 1)
+text(x = .40, y = .6,paste("AUC = ", round(auc.val.step[[1]],3), sep = ""))
+# AUC=0.875
+```
+
+```{R LDA}
+#All years
+#Training Set
+lda.train.x <- train[,c(1,6,10,12,13,14,15)]
+lda.train.y <- train$y
+fit.lda <- lda(lda.train.y ~ ., data = lda.train.x)
+pred.lda <- predict(fit.lda, newdata = lda.train.x)
+preds <- pred.lda$posterior
+preds <- as.data.frame(preds)
+# ROC for TRAINING data
+pred <- prediction(preds[,2],lda.train.y)
+roc.perf = performance(pred, measure = "tpr", x.measure = "fpr")
+auc.train <- performance(pred, measure = "auc")
+auc.train <- auc.train@y.values
+plot(roc.perf, colorize=TRUE)
+abline(a=0, b= 1)
+text(x = .40, y = .6,paste("AUC = ", round(auc.train[[1]],3), sep = ""))
+# AUC=0.83. Not surprising. Maybe better if we normalize and then weed out some variables
+
+#LDA for TEST data
+lda.test.x <- test[,c(1,6,10,12,13,14,15)]
+lda.test.y <- test$y
+pred.lda1 <- predict(fit.lda, newdata = lda.test.x)
+preds1 <- pred.lda1$posterior
+preds1 <- as.data.frame(preds1)
+pred1 <- prediction(preds1[,2],lda.test.y)
+roc.perf = performance(pred1, measure = "tpr", x.measure = "fpr")
+auc.train <- performance(pred1, measure = "auc")
+auc.train <- auc.train@y.values
+plot(roc.perf, colorize=TRUE)
+abline(a=0, b= 1)
+text(x = .40, y = .6,paste("AUC = ", round(auc.train[[1]],3), sep = ""))
+# AUC = 0.838
+
+
+pred.lda.cm<-predict(fit.lda,newdata=lda.test.x)$class  #Predictions can come in many forms, the class form provides the categorical level of your response.
+Truth<-lda.test.y
+x<-table(pred.lda.cm,Truth) # Creating a confusion matrix
+x
+#           Truth
+#pred.lda.cm   no  yes
+#        no  3003  288
+#        yes  104  101
+#Missclassification Error
+ME<-(x[2,1]+x[1,2])/3496  #change denom to N
+ME
+#0.1121281
+#Calculating overall accuracy
+1-ME
+#0.8878719
+
+#Without 2008
+#Training Set
+lda.train.x.2008 <- train2008[,c(1,6,10,12,13,14,15)]
+lda.train.y.2008 <- train2008$y
+fit.lda.2008 <- lda(lda.train.y.2008 ~ ., data = lda.train.x.2008)
+pred.lda.2008 <- predict(fit.lda.2008, newdata = lda.train.x.2008)
+preds.2008 <- pred.lda.2008$posterior
+preds.2008 <- as.data.frame(preds.2008)
+
+# ROC for TRAINING data
+pred.2008 <- prediction(preds.2008[,2],lda.train.y.2008)
+roc.perf.2008 = performance(pred.2008, measure = "tpr", x.measure = "fpr")
+auc.train.2008 <- performance(pred.2008, measure = "auc")
+auc.train.2008 <- auc.train.2008@y.values
+plot(roc.perf.2008, colorize=TRUE)
+abline(a=0, b= 1)
+text(x = .40, y = .6,paste("AUC = ", round(auc.train.2008[[1]],3), sep = ""))
+# AUC=0.764. Not surprising. Maybe better if we normalize and then weed out some variables
+
+#LDA for TEST data
+lda.test.x.2008 <- test2008[,c(1,6,10,12,13,14,15)]
+lda.test.y.2008 <- test2008$y
+pred.lda1.2008 <- predict(fit.lda.2008, newdata = lda.test.x.2008)
+preds1.2008 <- pred.lda1.2008$posterior
+preds1.2008 <- as.data.frame(preds1.2008)
+pred1.2008 <- prediction(preds1.2008[,2],lda.test.y.2008)
+roc.perf.2008 = performance(pred1.2008, measure = "tpr", x.measure = "fpr")
+auc.train.2008 <- performance(pred1.2008, measure = "auc")
+auc.train.2008 <- auc.train.2008@y.values
+plot(roc.perf.2008, colorize=TRUE)
+abline(a=0, b= 1)
+text(x = .40, y = .6,paste("AUC = ", round(auc.train.2008[[1]],3), sep = ""))
+#AUC=0.764
+
+pred.lda.cm.2008<-predict(fit.lda.2008,newdata=lda.test.x.2008)$class  #Predictions can come in many forms, the class form provides the categorical level of your response.
+Truth<-lda.test.y.2008
+x<-table(pred.lda.cm.2008,Truth) # Creating a confusion matrix
+x
+#                Truth
+#pred.lda.cm.2008   no  yes
+#             no  2594  626
+#             yes  123  153
+
+#Missclassification Error
+ME<-(x[2,1]+x[1,2])/3496  #change denom to N
+ME
+#0.2142449
+#Calculating overall accuracy
+1-ME
+#0.7857551
+```
+
+```{R QDA}
+# With all years
+fit.qda <- qda(lda.train.y ~ ., data = lda.train.x)
+pred.qda <- predict(fit.qda, newdata = lda.train.x)
+preds <- pred.qda$posterior
+preds <- as.data.frame(preds)
+# ROC for TRAINING data
+pred <- prediction(preds[,2],lda.train.y)
+roc.perf = performance(pred, measure = "tpr", x.measure = "fpr")
+auc.train <- performance(pred, measure = "auc")
+auc.train <- auc.train@y.values
+plot(roc.perf, colorize=TRUE)
+abline(a=0, b= 1)
+text(x = .40, y = .6,paste("AUC = ", round(auc.train[[1]],3), sep = ""))
+# AUC: 0.806
+
+# QDA for TEST data
+pred.qda1 <- predict(fit.qda, newdata = lda.test.x)
+preds1 <- pred.qda1$posterior
+preds1 <- as.data.frame(preds1)
+pred1 <- prediction(preds1[,2],lda.test.y)
+roc.perf = performance(pred1, measure = "tpr", x.measure = "fpr")
+auc.train <- performance(pred1, measure = "auc")
+auc.train <- auc.train@y.values
+plot(roc.perf, colorize=TRUE)
+abline(a=0, b= 1)
+text(x = .40, y = .6,paste("AUC = ", round(auc.train[[1]],3), sep = ""))
+# AUC = 0.811
+
+pred.lda.cm<-predict(fit.qda,newdata=lda.test.x)$class  #Predictions can come in many forms, the class form provides the categorical level of your response.
+Truth<-lda.test.y
+x<-table(pred.lda.cm,Truth) # Creating a confusion matrix
+x
+#           Truth
+#pred.lda.cm   no  yes
+#        no  2881  250
+#        yes  226  139
+
+#Missclassification Error
+ME<-(x[2,1]+x[1,2])/3496  #change denom to N
+ME
+#0.1361556
+#Calculating overall accuracy
+1-ME
+#0.8638444
+
+#Excluding 2008
+fit.qda.2008 <- qda(lda.train.y.2008 ~ ., data = lda.train.x.2008)
+pred.qda <- predict(fit.qda.2008, newdata = lda.train.x.2008)
+preds <- pred.qda$posterior
+preds <- as.data.frame(preds)
+# ROC for TRAINING data
+pred <- prediction(preds[,2],lda.train.y.2008)
+roc.perf = performance(pred, measure = "tpr", x.measure = "fpr")
+auc.train <- performance(pred, measure = "auc")
+auc.train <- auc.train@y.values
+plot(roc.perf, colorize=TRUE)
+abline(a=0, b= 1)
+text(x = .40, y = .6,paste("AUC = ", round(auc.train[[1]],3), sep = ""))
+# AUC: 0.734
+
+# QDA for TEST data
+pred.qda1.2008 <- predict(fit.qda.2008, newdata = lda.test.x.2008)
+preds1 <- pred.qda1.2008$posterior
+preds1 <- as.data.frame(preds1)
+pred1 <- prediction(preds1[,2],lda.test.y.2008)
+roc.perf = performance(pred1, measure = "tpr", x.measure = "fpr")
+auc.train <- performance(pred1, measure = "auc")
+auc.train <- auc.train@y.values
+plot(roc.perf, colorize=TRUE)
+abline(a=0, b= 1)
+text(x = .40, y = .6,paste("AUC = ", round(auc.train[[1]],3), sep = ""))
+# AUC = 0.737
+
+
+pred.lda.cm.2008<-predict(fit.qda.2008,newdata=lda.test.x.2008)$class  #Predictions can come in many forms, the class form provides the categorical level of your response.
+Truth<-lda.test.y.2008
+x<-table(pred.lda.cm.2008,Truth) # Creating a confusion matrix
+x
+#                Truth
+#pred.lda.cm.2008   no  yes
+#             no  2509  572
+#             yes  208  207
+
+#Missclassification Error
+ME<-(x[2,1]+x[1,2])/3496  #change denom to N
+ME
+#0.2231121
+
+#Calculating overall accuracy
+1-ME
+#0.7768879
+```
+
+```{R InteractionsModel}
+# try some interactions
+#For Year excluding 2008
+#year&day and year&month
+model.complex<-glm(as.factor(y) ~ age+job+marital+education+default+balance+housing+loan+contact+day+month+duration+campaign+pdays+previous+poutcome+year+year:month+year:day, data=train2008,family = binomial(link="logit"))
+step(Model_Full_2008,
+     scope = list(upper=model.complex),
+     direction="forward",
+     test="Chisq",
+     data=train2008)
+#Degrees of Freedom: 13984 Total (i.e. Null);  13930 Residual
+#Null Deviance:	    14820 
+#Residual Deviance: 9932 	
+#AIC: 10040
+
+#age&balance
+model.complex<-glm(as.factor(y) ~ age+job+marital+education+default+balance+housing+loan+contact+day+month+duration+campaign+pdays+previous+poutcome+year+age:balance, data=train2008,family = binomial(link="logit"))
+step(Model_Full_2008,
+     scope = list(upper=model.complex),
+     direction="forward",
+     test="Chisq",
+     data=train2008)
+#Degrees of Freedom: 13984 Total (i.e. Null);  13941 Residual
+#Null Deviance:	    14820 
+#Residual Deviance: 10250 	
+#AIC: 10330
+
+#job&balance
+model.complex<-glm(as.factor(y) ~ age+job+marital+education+default+balance+housing+loan+contact+day+month+duration+campaign+pdays+previous+poutcome+year+job:balance, data=train2008,family = binomial(link="logit"))
+step(Model_Full_2008,
+     scope = list(upper=model.complex),
+     direction="forward",
+     test="Chisq",
+     data=train2008)
+#Degrees of Freedom: 13984 Total (i.e. Null);  13941 Residual
+#Null Deviance:	    14820 
+#Residual Deviance: 10250 	AIC: 10330
+
+#education&balance
+model.complex<-glm(as.factor(y) ~ age+job+marital+education+default+balance+housing+loan+contact+day+month+duration+campaign+pdays+previous+poutcome+year+education:balance, data=train2008,family = binomial(link="logit"))
+step(Model_Full_2008,
+     scope = list(upper=model.complex),
+     direction="forward",
+     test="Chisq",
+     data=train2008)
+#Degrees of Freedom: 13984 Total (i.e. Null);  13941 Residual
+#Null Deviance:	    14820 
+#Residual Deviance: 10250 	AIC: 10330
+```
+
+```{R Random Forest}
+# Random Forest (training data)
+# Remove id variable as it's just for reference
+dat.train.rf <- train2008[,-18]
+train.rf<-randomForest(as.factor(y)~.,data=dat.train.rf,mtry=4,ntree=500,importance=T)
+fit.pred<-predict(train.rf,newdata=dat.train.rf,type="prob")
+pred <- prediction(fit.pred[,2], dat.train.rf$y)
+roc.perf = performance(pred, measure = "tpr", x.measure = "fpr")
+auc.train <- performance(pred, measure = "auc")
+auc.train <- auc.train@y.values
+plot(roc.perf)
+abline(a=0, b= 1)
+text(x = .40, y = .6,paste("AUC = ", round(auc.train[[1]],3), sep = ""))
+#AUC=1
+
+# Random Forest (test data)
+#Predict test set
+dat.val1.rf <- test2008[,-18]
+pred.val1<-predict(train.rf,newdata=dat.val1.rf,type="prob")
+pred <- prediction(pred.val1[,2], dat.val1.rf$y)
+roc.perf = performance(pred, measure = "tpr", x.measure = "fpr")
+auc.train <- performance(pred, measure = "auc")
+auc.train <- auc.train@y.values
+plot(roc.perf, colorize=TRUE)
+abline(a=0, b= 1)
+text(x = .40, y = .6,paste("AUC = ", round(auc.train[[1]],3), sep = ""))
+# AUC = 0.904
+```
+
