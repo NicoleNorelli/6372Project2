@@ -1,5 +1,4 @@
 # DS 6372 Project 2 (Direct Marketing Campaign)
-## Predict subscription to term deposit
 
 Contributers: Sowmya Mani, Nicole Norelli, & Nnenna Okpara
 
